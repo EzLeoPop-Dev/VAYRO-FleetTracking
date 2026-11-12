@@ -18,11 +18,12 @@
 | Backend/API | Elysia + Bun | ยืนยันตัวตนและสิทธิ์, API ของผลิตภัณฑ์, รับข้อมูลตำแหน่ง และประสานงานกับข้อมูล |
 | Database | PostgreSQL | จัดเก็บข้อมูลบริษัท รถ งาน ตำแหน่ง ประวัติ แจ้งเตือน และกิจกรรม |
 | Data API | PostgREST | เปิด endpoint สำหรับข้อมูล PostgreSQL ให้ backend ใช้ตามความเหมาะสม; ไม่ใช่ตัวฐานข้อมูล |
+| แผนที่สำหรับเดโม | MapLibre GL JS + OpenFreeMap | แสดงแผนที่เวกเตอร์จากข้อมูล OpenStreetMap แบบ 2D และ 3D |
 | 3D UI | Three.js | แสดงฉาก/รถ/เส้นทางใน dashboard โดยอิงข้อมูลพิกัดและสถานะจริงที่มี |
 | Container | Docker / Docker Compose | เตรียมสภาพแวดล้อมสำหรับรันบริการและฐานข้อมูลร่วมกัน |
 | Driver GPS demo | Android APK | ส่งตำแหน่งโทรศัพท์ผ่าน Elysia API ตามการยืนยันตัวตนและช่วงเวลางาน |
 
-**ยังไม่กำหนด:** framework ที่ใช้สร้าง APK, ผู้ให้บริการแผนที่/tiles, รูปแบบ protocol ของ GPS ภายนอก และค่าความถี่ส่งตำแหน่งจริง ให้เลือกเมื่อมี requirement หรือแหล่งข้อมูลพร้อม
+**ยังไม่กำหนด:** framework ที่ใช้สร้าง APK, ผู้ให้บริการแผนที่สำหรับ production, รูปแบบ protocol ของ GPS ภายนอก และค่าความถี่ส่งตำแหน่งจริง
 
 ## 3. โครงสร้างปัจจุบันใน repository
 
@@ -32,7 +33,8 @@
 .
 ├── apps/
 │   └── web/                         # มี: Next.js app scaffold
-│       ├── app/                     # มี: page.tsx, layout.tsx, globals.css
+│       ├── app/                     # มี: หน้าแรก, layout, styles และหน้า auth แบบทดลอง
+│       │   └── dashboard/           # มี: แผนที่และหน้ารถ คนขับ งาน และเพิ่มเติมสำหรับเดโม
 │       ├── public/                  # มี: assets เริ่มต้นของ Next.js
 │       ├── AGENTS.md                # มี: กฎเฉพาะ Next.js (ให้คง generated block ไว้)
 │       ├── next.config.ts
@@ -63,9 +65,13 @@
 ### สถานะจริงที่ควรรู้
 
 - Root ใช้ Bun workspaces ครอบ `apps/*`, `gateway`, `services/*`, `packages/*`.
-- หน้าเว็บ, gateway, auth-service และ shared-types ยังเป็น scaffold; business logic ของระบบติดตามยังไม่ได้เริ่มในไฟล์เหล่านี้
+- `/` เปิด `/dashboard` ซึ่งแสดงรถและเส้นทางจำลองสำหรับ Manager และ Dispatcher เดโมนี้สร้างพิกัดในเบราว์เซอร์ เส้นทางไม่ได้มาจากบริการคำนวณเส้นทาง และไม่มีการใช้ข้อมูลบริษัทจริง
+- Bottom Bar ของ Dashboard เปิดหน้าต่างจัดการรถเหนือแผนที่ที่ `/dashboard/vehicles` และเชื่อมไปยังหน้าคนขับ งาน และเพิ่มเติม หน้าต่างรถค้นหาและกรองรายการได้ หน้ารถและคนขับเป็นรายการอ่านอย่างเดียวจากข้อมูลจำลอง หน้างานแสดงสถานะว่าง
+- TestRole ในหน้าเพิ่มเติมสลับมุมมองจำลอง Dispatch และ Company Admin โดยเก็บตัวเลือกใน `sessionStorage` ของแท็บ มุมมอง Dispatch ใช้แผนที่และงาน ส่วนมุมมอง Admin เพิ่มหน้าภาพรวม รถ และคนขับ การแสดงเมนูและหน้าเป็นพฤติกรรมของเดโมเท่านั้น สิทธิ์ใช้งานจริงต้องตรวจที่ API
+- `/dashboard/overview` เปิดเป็นหน้าต่างลอยเหนือแผนที่และใช้กรอบหน้าต่างร่วมกับหน้าจัดการรถ สรุปจำนวนพนักงานขับรถและรถตามประเภทจากข้อมูลจำลอง สถานะปฏิบัติงาน พร้อมใช้งาน และไม่ได้ใช้งานมาจากสถานะการจัดรถในเดโม ส่วนสถานะกำลังวิ่ง จอด และขาดสัญญาณมาจากข้อมูล GPS จำลอง
+- gateway, auth-service และ shared-types ยังเป็น scaffold การยืนยันตัวตน สิทธิ์ตามบทบาท และการรับ GPS จริงเป็นงานขั้นต่อไป
 - มี Dockerfile และ Compose สำหรับรัน web, gateway และ auth-service พร้อม health checks; ดูวิธีรันใน root README.md
-- ยังไม่พบ `vehicle-service`, `tracking-service`, `notification-service`, แอป Android/APK, การเชื่อม PostgreSQL/PostgREST หรือ Three.js
+- ยังไม่พบ `vehicle-service`, `tracking-service`, `notification-service`, แอป Android/APK หรือการเชื่อม PostgreSQL/PostgREST
 - สคริปต์ root มี `dev:vehicle`, `dev:tracking`, `dev:notification` ซึ่งชี้ไปยัง service folders ที่ยังไม่มี ควรสร้าง service ที่เกี่ยวข้องก่อนใช้สคริปต์นั้น
 - มี `AGENTS.md` ใน `apps/web`; ให้ปฏิบัติตามกฎนั้นควบคู่กับ root `AGENTS.md` เมื่อแก้หน้าเว็บ โดยเฉพาะข้อให้อ่านเอกสาร Next.js ที่ติดตั้งอยู่ก่อนเปลี่ยน API
 
