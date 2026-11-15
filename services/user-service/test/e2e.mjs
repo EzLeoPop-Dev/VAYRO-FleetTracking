@@ -16,7 +16,8 @@ async function call(method, path, token, body) {
     body: body ? JSON.stringify(body) : undefined });
   return { status: response.status, ...(await response.json()) };
 }
-const psql = q => execFileSync("docker", ["compose", "exec", "-T", "postgres", "psql", "-U", "vayro", "-d", "vayro", "-tAc", q], { cwd: root, encoding: "utf8" }).trim();
+// user-service owns user_db (users, its own system_log); company lives in company_db.
+const psql = (q, db = "user_db") => execFileSync("docker", ["compose", "exec", "-T", "postgres", "psql", "-U", "vayro", "-d", db, "-tAc", q], { cwd: root, encoding: "utf8" }).trim();
 async function workspace(label) {
   const email = `${label}-${suffix}@example.test`;
   const registration = await call("POST", "/companies/register", null, { company_name: label, contact_email: email,
@@ -24,7 +25,7 @@ async function workspace(label) {
   assert.equal(registration.status, 200);
   const id = registration.data.company_id;
   assert.match(id, /^[0-9]+$/);
-  psql(`UPDATE company SET workspace_status='active' WHERE company_id=${id}`);
+  psql(`UPDATE company SET workspace_status='active' WHERE company_id=${id}`, "company_db");
   const login = await call("POST", "/auth/login", null, { email, password });
   assert.equal(login.status, 200);
   return { id, email, user: login.data.user, token: login.data.access_token };
@@ -32,7 +33,7 @@ async function workspace(label) {
 const a = await workspace("user-a");
 const b = await workspace("user-b");
 const platformEmail = `platform-${suffix}@example.test`;
-const bootstrapArgs = ["compose", "exec", "-T", "-e", `ADMIN_EMAIL=${platformEmail}`, "-e", "ADMIN_FULL_NAME=Platform", "-e", `ADMIN_PASSWORD=${password}`, "auth-service", "bun", "scripts/create-platform-admin.ts"];
+const bootstrapArgs = ["compose", "exec", "-T", "-e", `ADMIN_EMAIL=${platformEmail}`, "-e", "ADMIN_FULL_NAME=Platform", "-e", `ADMIN_PASSWORD=${password}`, "user-service", "bun", "scripts/create-platform-admin.ts"];
 const bootstrap = execFileSync("docker", bootstrapArgs, { cwd: root, encoding: "utf8" });
 check("Operator bootstrap creates first Platform Admin", bootstrap.includes("Platform Admin created"));
 let duplicateBootstrapRejected = false;

@@ -3,8 +3,18 @@
   "private": true,
   "scripts": {
     "dev": "bun run --watch src/index.ts",
-    "start": "bun src/index.ts"
+    "start": "bunx --bun prisma migrate deploy && bun src/index.ts",
+    "db:generate": "bunx --bun prisma generate",
+    "db:migrate": "bunx --bun prisma migrate deploy"
   },
-  "dependencies": { "elysia": "^1.4.31" },
-  "devDependencies": { "bun-types": "latest" }
+  "dependencies": {
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "@vayro/service-kit": "workspace:*",
+    "elysia": "^1.4.31"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "prisma": "7.10.1"
+  }
 }

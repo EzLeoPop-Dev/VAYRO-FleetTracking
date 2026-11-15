@@ -1,0 +1,66 @@
+// user-service owns users. Database: user_db (no other service connects to it).
+// company_id points at company-service data: a plain value, no foreign key. company-service answers "does it exist".
+// Field names stay snake_case so rows already match the public API contract.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  platform_admin
+  company_admin
+  dispatcher
+  driver
+
+  @@map("user_role")
+}
+
+enum AccountStatus {
+  active
+  inactive
+  suspended
+
+  @@map("account_status")
+}
+
+// CHECK constraints Prisma cannot express live in migrations/*/migration.sql:
+//   email = lower(email); (role = 'platform_admin') = (company_id IS NULL)
+model User {
+  user_id        BigInt        @id @default(autoincrement())
+  company_id     BigInt?
+  full_name      String        @db.VarChar(150)
+  email          String        @unique @db.VarChar(150)
+  password_hash  String        @db.VarChar(255)
+  role           Role
+  phone          String?       @db.VarChar(30)
+  account_status AccountStatus @default(active)
+  created_at     DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at     DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([company_id], map: "users_company_idx")
+  @@map("users")
+}
+
+// Audit trail of this service only. Never store passwords, tokens or secrets in old_value/new_value.
+// company_id/user_id are plain values (no FK) so every service can use the same table shape.
+model SystemLog {
+  system_log_id BigInt   @id @default(autoincrement())
+  company_id    BigInt?
+  user_id       BigInt?
+  action        String   @db.VarChar(120)
+  entity_type   String?  @db.VarChar(80)
+  entity_id     String?  @db.VarChar(80)
+  old_value     Json?
+  new_value     Json?
+  result        String   @default("success") @db.VarChar(10)
+  ip_address    String?  @db.VarChar(45)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([company_id, created_at], map: "system_log_company_idx")
+  @@map("system_log")
+}

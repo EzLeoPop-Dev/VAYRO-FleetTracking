@@ -1,0 +1,64 @@
+// gps-device-service owns GPS devices / data sources. Database: gps_device_db.
+// company_id / vehicle_id point at other services' data: plain values, no foreign keys.
+// vehicle-service answers "does this vehicle exist in this company" before any write.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum GpsSourceType {
+  gps_device
+  provider_api
+  driver_mobile_app
+
+  @@map("gps_source_type")
+}
+
+enum GpsConnectionStatus {
+  connected
+  disconnected
+  error
+
+  @@map("gps_connection_status")
+}
+
+model GpsDevice {
+  gps_device_id         BigInt              @id @default(autoincrement())
+  company_id            BigInt
+  vehicle_id            BigInt
+  device_code           String              @db.VarChar(100)
+  source_type           GpsSourceType
+  provider_name         String?             @db.VarChar(120)
+  connection_config     Json?
+  credentials_encrypted String?
+  connection_status     GpsConnectionStatus @default(disconnected)
+  last_received_at      DateTime?           @db.Timestamptz(6)
+  created_at            DateTime            @default(now()) @db.Timestamptz(6)
+  updated_at            DateTime            @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@unique([company_id, device_code])
+  @@map("gps_devices")
+}
+
+// Audit trail of this service only. Never store credentials in old_value/new_value.
+model SystemLog {
+  system_log_id BigInt   @id @default(autoincrement())
+  company_id    BigInt?
+  user_id       BigInt?
+  action        String   @db.VarChar(120)
+  entity_type   String?  @db.VarChar(80)
+  entity_id     String?  @db.VarChar(80)
+  old_value     Json?
+  new_value     Json?
+  result        String   @default("success") @db.VarChar(10)
+  ip_address    String?  @db.VarChar(45)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([company_id, created_at], map: "system_log_company_idx")
+  @@map("system_log")
+}

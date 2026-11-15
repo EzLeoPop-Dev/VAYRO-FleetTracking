@@ -1,7 +1,7 @@
 # Authentication Service
 
-Implemented in `services/auth-service`, reached through the gateway (`/api/v1/...`). Tables: `infra/database/001_auth.sql`.
-User endpoints now run separately in `services/user-service`, reached through the same gateway URLs. Company registration remains an existing adjacent module in auth-service.
+Implemented in `services/auth-service`, reached through the gateway (`/api/v1/...`). Tables: `auth_sessions` and `system_log` in `auth_db` (Prisma, see [DATABASE.md](DATABASE.md)); users belong to user-service and companies to company-service.
+User endpoints run in `services/user-service` and company registration in `services/company-service`, reached through the same gateway URLs. Login asks user-service to check the password and company-service for the workspace status.
 
 ## Data Dictionary mapping (PDF pages 7-8, 17-18)
 
@@ -16,14 +16,13 @@ PostgreSQL uses identity BIGINT, TIMESTAMPTZ and CHECK constraints to represent 
 ## Verification
 
 ```sh
-docker compose up --build -d --wait postgres auth-service user-service gateway
+docker compose up --build -d --wait
 docker compose exec -T auth-service bun test test/security.test.ts
 node services/auth-service/test/e2e.mjs
 node services/user-service/test/e2e.mjs
-node services/auth-service/test/migration.mjs
 ```
 
-Verified on Docker (Bun 1.3.14 + PostgreSQL 17): 5 unit tests, 67 Authentication E2E checks and 54 User E2E checks. Covers all roles, workspace/account status, session expiry/revocation, parallel refresh, authorization, tenant isolation and transactional audit rollback. Tests create and retain accounts; use a local development database only. Set `GATEWAY_URL`, `AUTH_URL`, `USER_URL` if host ports differ. See [User Service contracts and operator bootstrap](USER.md).
+Verified on Docker (Bun 1.3.14 + PostgreSQL 17, per-service databases, 2026-11-15): 5 unit tests, 68 Authentication E2E checks and 54 User E2E checks. Covers all roles, workspace/account status, session expiry/revocation, parallel refresh, authorization, tenant isolation and transactional audit rollback. Tests create and retain accounts; use a local development database only. Set `GATEWAY_URL`, `AUTH_URL`, `USER_URL` if host ports differ. See [User Service contracts and operator bootstrap](USER.md).
 
 ## Endpoints
 
