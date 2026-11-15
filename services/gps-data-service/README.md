@@ -1,0 +1,46 @@
+# 6. GPS Data Service
+
+Receives GPS points from devices, providers or a driver's phone, validates them and stores them with `recorded_at` and `received_at`.
+
+| | |
+| --- | --- |
+| Database | `gps_data_db` (role `gps_data_svc`), Prisma schema in `prisma/schema.prisma` |
+| Owns tables | `gps_locations` |
+| Gateway prefix | see `gateway/src/index.ts` |
+
+## Data quality and events (PDF page 21, section 5.3)
+
+- **Duplicates:** `external_record_id` is unique per device (`409 DUPLICATE_RECORD`).
+- **Abnormal data:** every point carries `anomalies`, a list that is empty for a normal point. `null_island` = exactly (0, 0). `impossible_speed` = getting from the stored point before it to this one needs more than 250 km/h. Abnormal points are stored and flagged, never dropped. Checked on ingest (against the point before it in time), on `latest`, and on `locations`.
+- **Missing data:** `GET .../locations` returns `meta.gaps`, the stretches of more than 10 minutes with no point among the points returned (`{from, to, minutes}`). Thresholds are `GAP_MS` and `MAX_PLAUSIBLE_KMH` in `src/domain/gps.ts`.
+- **Push to other services:** set `GPS_EVENT_SUBSCRIBERS` (comma separated base URLs, e.g. `http://alert-service:3000`). Each new stored point is sent to every subscriber as `POST <url>/internal/gps/locations` with `{"event":"gps_location.stored","location":{...public GPS point with anomalies}}` and the `x-internal-token` header. Delivery is fire-and-forget: a failing subscriber is only logged and never fails the device's request, so a subscriber that needs every point must also catch up through `GET /internal/locations`. Tracking, Route History and Reporting read points on demand, so they do not need the push; Alert & Geofence does. No service implements the receiving endpoint yet, so the list is empty by default.
+
+## Public endpoints (from the project PDF, pages 18-26)
+
+- [x] `POST /api/v1/gps/ingest`
+- [x] `GET /api/v1/gps/vehicles/:vehicleId/locations`
+- [x] `GET /api/v1/gps/vehicles/:vehicleId/latest`
+
+Every endpoint must check Authentication, Role and `company_id` from the signed-in user, never from the request body (PDF page 18).
+
+## Internal API other services call (not routed by the gateway, needs `x-internal-token`)
+
+- `GET /internal/locations/latest?company_id=&vehicle_id=`
+- `GET /internal/locations?company_id=&vehicle_id=&from=&to=&limit=`
+
+## Data it needs from other services (ask them over `/internal/*`, never their database)
+
+- gps-device-service (device by code, last-received update)
+- vehicle-service, transport-service (driver rule), company-service (workspace status)
+- auth-service (caller identity)
+
+## Data layer
+
+- Edit `prisma/schema.prisma`, then create a migration: `DATABASE_URL=... bunx prisma migrate dev --name what_changed` (see `docs/DATABASE.md`).
+- Fields keep the Data Dictionary names (snake_case). BIGINT ids are strings in the API.
+- Other services' ids (`company_id`, `vehicle_id`, ...) are plain columns without foreign keys.
+
+## Code layout
+
+`src/app.ts` builds the app, `src/config/env.ts` reads env, `src/plugins/guard.ts` gives `authed(...roles)` for protected routes. `src/lib/prisma.ts` is the database client.
+Keep routes thin; put rules in a service / use-case file and every database call in a repository file (see `docs/PROJECT_STRUCTURE.md`).
