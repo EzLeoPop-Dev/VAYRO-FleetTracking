@@ -7,7 +7,7 @@ Implements the eight User Service endpoints in PDF pages 19-20, with `users`, `c
 From the repository root, with `.env` configured:
 
 ```sh
-docker compose up --build -d --wait postgres auth-service user-service gateway
+docker compose up --build -d --wait
 node services/auth-service/test/e2e.mjs
 node services/user-service/test/e2e.mjs
 ```
@@ -45,7 +45,7 @@ There is no public Platform Admin signup endpoint. An operator with database/con
 $env:ADMIN_EMAIL = Read-Host 'Admin email'
 $env:ADMIN_FULL_NAME = Read-Host 'Admin full name'
 $env:ADMIN_PASSWORD = Read-Host 'Admin password (10-128 chars)' -MaskInput
-docker compose exec -T -e ADMIN_EMAIL -e ADMIN_FULL_NAME -e ADMIN_PASSWORD auth-service bun scripts/create-platform-admin.ts
+docker compose exec -T -e ADMIN_EMAIL -e ADMIN_FULL_NAME -e ADMIN_PASSWORD user-service bun scripts/create-platform-admin.ts
 Remove-Item Env:ADMIN_PASSWORD
 ```
 

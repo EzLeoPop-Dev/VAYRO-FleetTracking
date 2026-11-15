@@ -1,0 +1,44 @@
+// auth-service owns login sessions only. Database: auth_db.
+// Users and companies live in user-service; user_id here is a plain reference, not a foreign key.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model AuthSession {
+  session_id         BigInt    @id @default(autoincrement())
+  user_id            BigInt
+  refresh_token_hash String    @unique @db.VarChar(255)
+  expires_at         DateTime  @db.Timestamptz(6)
+  revoked_at         DateTime? @db.Timestamptz(6)
+  last_used_at       DateTime? @db.Timestamptz(6)
+  ip_address         String?   @db.VarChar(45)
+  user_agent         String?   @db.VarChar(255)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+
+  @@index([user_id, expires_at], map: "auth_sessions_user_idx")
+  @@map("auth_sessions")
+}
+
+// Audit trail of this service only. Never store passwords, tokens or secrets in old_value/new_value.
+model SystemLog {
+  system_log_id BigInt   @id @default(autoincrement())
+  company_id    BigInt?
+  user_id       BigInt?
+  action        String   @db.VarChar(120)
+  entity_type   String?  @db.VarChar(80)
+  entity_id     String?  @db.VarChar(80)
+  old_value     Json?
+  new_value     Json?
+  result        String   @default("success") @db.VarChar(10)
+  ip_address    String?  @db.VarChar(45)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([company_id, created_at], map: "system_log_company_idx")
+  @@map("system_log")
+}

@@ -1,0 +1,67 @@
+// vehicle-service owns vehicle types and vehicles. Database: vehicle_db.
+// company_id / current_driver_id point at user-service data: plain values, no foreign keys.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum VehicleStatus {
+  active
+  inactive
+  maintenance
+
+  @@map("vehicle_status")
+}
+
+model VehicleType {
+  vehicle_type_id BigInt    @id @default(autoincrement())
+  company_id      BigInt
+  type_name       String    @db.VarChar(80)
+  description     String?   @db.VarChar(255)
+  is_active       Boolean   @default(true)
+  created_at      DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+  vehicles        Vehicle[]
+
+  @@unique([company_id, type_name])
+  @@map("vehicle_types")
+}
+
+model Vehicle {
+  vehicle_id        BigInt        @id @default(autoincrement())
+  company_id        BigInt
+  vehicle_type_id   BigInt?
+  vehicle_code      String        @db.VarChar(50)
+  license_plate     String        @db.VarChar(30)
+  vehicle_status    VehicleStatus @default(active)
+  current_driver_id BigInt?
+  created_at        DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
+  vehicle_type      VehicleType?  @relation(fields: [vehicle_type_id], references: [vehicle_type_id], onDelete: Restrict)
+
+  @@unique([company_id, vehicle_code])
+  @@map("vehicles")
+}
+
+// Audit trail of this service only. Never store secrets in old_value/new_value.
+model SystemLog {
+  system_log_id BigInt   @id @default(autoincrement())
+  company_id    BigInt?
+  user_id       BigInt?
+  action        String   @db.VarChar(120)
+  entity_type   String?  @db.VarChar(80)
+  entity_id     String?  @db.VarChar(80)
+  old_value     Json?
+  new_value     Json?
+  result        String   @default("success") @db.VarChar(10)
+  ip_address    String?  @db.VarChar(45)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([company_id, created_at], map: "system_log_company_idx")
+  @@map("system_log")
+}

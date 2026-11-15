@@ -1,0 +1,102 @@
+// alert-service (Alert & Geofence) owns alert_rules, geofences and alerts. Database: alert_db.
+// company_id / vehicle_id / job_id / recipient_user_id / created_by / handled_by point at other services' data:
+// plain values, no foreign keys. Inside this service geofence_id is a real foreign key.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum AlertRuleType {
+  gps_offline
+  overspeed
+
+  @@map("alert_rule_type")
+}
+
+enum AlertType {
+  gps_offline
+  overspeed
+  geofence_enter
+  geofence_exit
+  system_anomaly
+  job_assignment
+
+  @@map("alert_type")
+}
+
+enum AlertStatus {
+  unread
+  read
+  handling
+  resolved
+
+  @@map("alert_status")
+}
+
+enum GeofenceStatus {
+  active
+  inactive
+
+  @@map("geofence_status")
+}
+
+// CHECK constraints Prisma cannot express live in migrations/*/migration.sql
+// (center_latitude -90..90, center_longitude -180..180, radius_meters 0..4294967295).
+model Geofence {
+  geofence_id      BigInt         @id @default(autoincrement())
+  company_id       BigInt
+  geofence_name    String         @db.VarChar(120)
+  center_latitude  Decimal        @db.Decimal(10, 7)
+  center_longitude Decimal        @db.Decimal(10, 7)
+  radius_meters    BigInt
+  notify_enter     Boolean        @default(true)
+  notify_exit      Boolean        @default(true)
+  geofence_status  GeofenceStatus @default(active)
+  created_by       BigInt
+  created_at       DateTime       @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime       @default(now()) @updatedAt @db.Timestamptz(6)
+  alerts           Alert[]
+
+  @@index([company_id, geofence_status], map: "geofences_company_status_idx")
+  @@map("geofences")
+}
+
+model AlertRule {
+  alert_rule_id   BigInt        @id @default(autoincrement())
+  company_id      BigInt
+  rule_type       AlertRuleType
+  threshold_value Decimal?      @db.Decimal(10, 2)
+  is_enabled      Boolean       @default(true)
+  created_by      BigInt
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at      DateTime      @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@unique([company_id, rule_type])
+  @@map("alert_rules")
+}
+
+model Alert {
+  alert_id          BigInt      @id @default(autoincrement())
+  company_id        BigInt
+  vehicle_id        BigInt?
+  job_id            BigInt?
+  geofence_id       BigInt?
+  recipient_user_id BigInt?
+  alert_type        AlertType
+  title             String      @db.VarChar(150)
+  detail            String?
+  event_data        Json?
+  triggered_at      DateTime    @default(now()) @db.Timestamptz(6)
+  alert_status      AlertStatus @default(unread)
+  handled_by        BigInt?
+  resolved_at       DateTime?   @db.Timestamptz(6)
+  geofence          Geofence?   @relation(fields: [geofence_id], references: [geofence_id], onDelete: Restrict)
+
+  @@index([company_id, alert_status, triggered_at], map: "alerts_company_status_time_idx")
+  @@map("alerts")
+}

@@ -23,18 +23,20 @@ function check(name, cond, extra) {
   if (!cond) fails++;
   console.log(`${cond ? "PASS" : "FAIL"}  ${name}${cond ? "" : "  -> " + JSON.stringify(extra)}`);
 }
-const psql = (q) => execSync(`docker compose exec -T postgres psql -U vayro -d vayro -tAc "${q}"`, { encoding: "utf8", cwd: REPO_ROOT }).trim();
+// Each service owns its database: company in company_db, users in user_db, sessions in auth_db.
+const psql = (q, db = "user_db") => execSync(`docker compose exec -T postgres psql -U vayro -d ${db} -tAc "${q}"`, { encoding: "utf8", cwd: REPO_ROOT }).trim();
 
 // register
-const schemaRows = psql("SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('company','users','auth_sessions','system_log')");
-check("Auth/User uses four documented tables", schemaRows === "4", schemaRows);
-check("dictionary audit primary key", psql("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='system_log' AND column_name='system_log_id'") === "1");
-check("dictionary audit foreign keys", psql("SELECT count(*) FROM pg_constraint WHERE conrelid='public.system_log'::regclass AND contype='f'") === "2");
+const tables = (db, list) => psql(`SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_name IN (${list})`, db);
+check("company_db holds company and its own audit log", tables("company_db", "'company','system_log'") === "2");
+check("user_db holds users and its own audit log, but no company table", tables("user_db", "'users','system_log'") === "2" && tables("user_db", "'company'") === "0");
+check("auth_db holds sessions and its own audit log only", tables("auth_db", "'auth_sessions','system_log'") === "2" && tables("auth_db", "'company','users'") === "0");
+check("dictionary audit primary key", psql("SELECT count(*) FROM information_schema.columns WHERE table_schema='public' AND table_name='system_log' AND column_name='system_log_id'", "auth_db") === "1");
 const adminEmail = `admin${sfx}@a.test`;
 let r = await call("POST", "/companies/register", { body: { company_name: "Co A", contact_name: "x".repeat(100), contact_email: `c${sfx}@a.test`, admin_full_name: "Admin A", admin_email: adminEmail, admin_password: PW } });
 check("register 200", r.status === 200 && r.json?.data?.workspace_status === "pending", r);
 const coA = r.json?.data?.company_id;
-check("dictionary contact_name 100 stored intact", psql(`SELECT char_length(contact_name) FROM company WHERE company_id=${coA}`) === "100");
+check("dictionary contact_name 100 stored intact", psql(`SELECT char_length(contact_name) FROM company WHERE company_id=${coA}`, "company_db") === "100");
 r = await call("POST", "/companies/register", { body: { company_name: "Co A", contact_email: `c${sfx}@a.test`, admin_full_name: "x", admin_email: `o${sfx}@a.test`, admin_password: PW } });
 check("register dup contact_email 409", r.status === 409, r);
 r = await call("POST", "/companies/register", { body: { company_name: "", contact_email: "bad", admin_full_name: "x", admin_email: "y", admin_password: "short" } });
@@ -50,7 +52,7 @@ check("login wrong pw 401", r.status === 401 && r.json?.error?.code === "INVALID
 r = await call("POST", "/auth/login", { body: { email: "nobody@a.test", password: "whatever-pass" } });
 check("login unknown email 401 (same error)", r.status === 401 && r.json?.error?.code === "INVALID_CREDENTIALS", r);
 
-psql(`UPDATE company SET workspace_status='active' WHERE company_id=${coA}`);
+psql(`UPDATE company SET workspace_status='active' WHERE company_id=${coA}`, "company_db");
 
 r = await call("POST", "/auth/login", { body: { email: adminEmail.toUpperCase(), password: PW } });
 check("login ok (case-insens email)", r.status === 200 && r.json?.data?.access_token && r.json?.data?.refresh_token, r.status);
@@ -81,12 +83,12 @@ const adminTok = t3.access_token;
 const expiredLogin = await call("POST", "/auth/login", { body: { email: adminEmail, password: PW } });
 const expiredSessionId = JSON.parse(Buffer.from(expiredLogin.json.data.access_token.split(".")[1], "base64url")).sid;
 if (!/^[0-9]+$/.test(expiredSessionId)) throw new Error("Invalid fixture session id");
-psql(`UPDATE auth_sessions SET expires_at=now()-interval '1 day' WHERE session_id=${expiredSessionId}`);
+psql(`UPDATE auth_sessions SET expires_at=now()-interval '1 day' WHERE session_id=${expiredSessionId}`, "auth_db");
 r = await call("POST", "/auth/refresh", { body: { refresh_token: expiredLogin.json.data.refresh_token } });
 check("expired unused refresh is rejected", r.status === 401, r.status);
 r = await call("GET", "/auth/me", { token: adminTok });
 check("expired unused refresh leaves current session active", r.status === 200, r.status);
-psql(`UPDATE auth_sessions SET revoked_at=now() WHERE session_id=${expiredSessionId}`);
+psql(`UPDATE auth_sessions SET revoked_at=now() WHERE session_id=${expiredSessionId}`, "auth_db");
 r = await call("POST", "/auth/refresh", { body: { refresh_token: expiredLogin.json.data.refresh_token } });
 check("expired revoked refresh is rejected", r.status === 401, r.status);
 r = await call("GET", "/auth/me", { token: adminTok });
@@ -118,7 +120,7 @@ check("dispatcher edits own profile", r.status === 200 && r.json?.data?.full_nam
 // tenant isolation
 r = await call("POST", "/companies/register", { body: { company_name: "Co B", contact_email: `c${sfx}@b.test`, admin_full_name: "Admin B", admin_email: `admin${sfx}@b.test`, admin_password: PW } });
 const coB = r.json.data.company_id;
-psql(`UPDATE company SET workspace_status='active' WHERE company_id=${coB}`);
+psql(`UPDATE company SET workspace_status='active' WHERE company_id=${coB}`, "company_db");
 r = await call("POST", "/auth/login", { body: { email: `admin${sfx}@b.test`, password: PW } });
 const bTok = r.json.data.access_token;
 r = await call("GET", `/users/${dId}`, { token: bTok });
@@ -150,7 +152,7 @@ r = await call("POST", "/auth/login", { body: { email: dEmail, password: PW } })
 check("suspended login 403", r.status === 403 && r.json?.error?.code === "ACCOUNT_INACTIVE", r);
 
 // suspend workspace -> admin token dies
-psql(`UPDATE company SET workspace_status='suspended' WHERE company_id=${coB}`);
+psql(`UPDATE company SET workspace_status='suspended' WHERE company_id=${coB}`, "company_db");
 r = await call("GET", "/auth/me", { token: bTok });
 check("suspended workspace token 403", r.status === 403, r);
 
@@ -192,16 +194,16 @@ psql(`UPDATE users SET account_status='active' WHERE user_id=${dId}`);
 const driver = await call("POST", "/auth/login", { body: { email: dEmail, password: PW } });
 check("driver login", driver.status === 200 && driver.json?.data.user.role === "driver", driver.status);
 check("driver me", (await call("GET", "/auth/me", { token: driver.json.data.access_token })).status === 200);
-psql(`UPDATE auth_sessions SET expires_at=now()-interval '1 second' WHERE user_id=${dId} AND revoked_at IS NULL`);
+psql(`UPDATE auth_sessions SET expires_at=now()-interval '1 second' WHERE user_id=${dId} AND revoked_at IS NULL`, "auth_db");
 check("expired session access denied", (await call("GET", "/auth/me", { token: driver.json.data.access_token })).status === 401);
 check("expired refresh denied", (await call("POST", "/auth/refresh", { body: { refresh_token: driver.json.data.refresh_token } })).status === 401);
 
 for (const state of ["pending", "rejected", "suspended"]) {
-  psql(`UPDATE company SET workspace_status='${state}' WHERE company_id=${coA}`);
+  psql(`UPDATE company SET workspace_status='${state}' WHERE company_id=${coA}`, "company_db");
   const denied = await call("POST", "/auth/login", { body: { email: adminEmail, password: PW } });
   check(`${state} workspace cannot login`, denied.status === 403 && denied.json?.error.code === "WORKSPACE_NOT_ACTIVE", denied.status);
 }
-psql(`UPDATE company SET workspace_status='active' WHERE company_id=${coA}`);
+psql(`UPDATE company SET workspace_status='active' WHERE company_id=${coA}`, "company_db");
 
 const directAuth = process.env.AUTH_URL ?? "http://127.0.0.1:3002";
 check("user routes removed from Authentication Service", (await fetch(directAuth + "/api/v1/users/me")).status === 404);
@@ -214,9 +216,11 @@ const raw = await fetch(BASE + "/auth/login", { method: "POST", headers: { "cont
 check("malformed JSON 4xx not 500", raw.status >= 400 && raw.status < 500, raw.status);
 
 // audit & secrets
-console.log("audit actions:", psql("SELECT action||':'||result||'x'||count(*) FROM system_log GROUP BY action,result ORDER BY 1").replace(/\n/g, " | "));
-check("audit has no tokens/password", psql("SELECT count(*) FROM system_log WHERE new_value::text ~* 'password|token' OR old_value::text ~* 'password|token'") === "0", null);
-check("stored refresh tokens hashed", psql(`SELECT count(*) FROM auth_sessions WHERE refresh_token_hash='${t3.refresh_token}'`) === "0", null);
+for (const db of ["auth_db", "company_db", "user_db"]) {
+  console.log(`audit actions (${db}):`, psql("SELECT action||':'||result||'x'||count(*) FROM system_log GROUP BY action,result ORDER BY 1", db).replaceAll("\n", " | "));
+  check(`${db} audit has no tokens/password`, psql("SELECT count(*) FROM system_log WHERE new_value::text ~* 'password|token' OR old_value::text ~* 'password|token'", db) === "0", null);
+}
+check("stored refresh tokens hashed", psql(`SELECT count(*) FROM auth_sessions WHERE refresh_token_hash='${t3.refresh_token}'`, "auth_db") === "0", null);
 
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASSED");
 process.exit(fails ? 1 : 0);

@@ -8,7 +8,7 @@ The PDF Data Dictionary is the business-field source. `data-dictionary.json` lis
 - Timestamps are ISO 8601 UTC strings, stored as TIMESTAMPTZ. recorded_at is measured by the source; received_at is assigned by PostgreSQL. Never replace the measured timestamp with the arrival time.
 - GPS latitude, longitude, speed and accuracy are JSON numbers, stored with the dictionary's NUMERIC precision/scale. Missing optional sensor values are null, not fabricated zeros.
 - Success uses `{success:true,data,message,request_id}`. Errors use `{success:false,error:{code,message,details?},request_id}`. Creation is 201; normal reads/updates are 200; malformed/invalid data is 400/422; unauthenticated is 401; unauthorized is 403; missing scoped rows are 404; duplicates/referenced rows are 409.
-- Company/role authority comes from Authentication/credential lookup, never from a user-selected body field. PostgreSQL foreign keys also reject relationships that cross company boundaries.
+- Company/role authority comes from Authentication/credential lookup, never from a user-selected body field. Inside one service PostgreSQL foreign keys apply; relationships that cross services (a device's vehicle, a user's company) are checked by asking the owning service, which also refuses other companies' ids.
 
 ## GPS names changed to match the document
 
@@ -25,7 +25,7 @@ Legacy payloads are rejected; there is no hidden alias that could make two devel
 
 Driver mobile uses the existing Login JWT plus a registered driver_mobile_app device, a matching current_driver_id and an in_progress job for that driver/vehicle. No additional phone/GPS tracking permission is implied outside an active assigned job. No job-creation endpoint or real mobile APK is introduced in this work.
 
-Provider credential handling is intentionally closed: the database has credentials_encrypted, but public GPS responses exclude it and plaintext credentials/settings keys are rejected. A future real-provider adapter must implement encrypted storage and should not change the dictionary schema or expose secrets.
+Provider credentials: `POST`/`PUT /gps-devices` accept a write-only `credentials` object, encrypted (AES-256-GCM) into `credentials_encrypted`. Responses never contain it; they carry the derived boolean `has_credentials` (not a Data Dictionary column). `credentials: null` removes it. Plaintext secrets in `connection_config` are still rejected. Without `CREDENTIALS_ENCRYPTION_KEY` the server refuses to save credentials (503).
 
 ## Ready for other developers
 
@@ -41,7 +41,8 @@ The PDF does not prescribe every wire format or operational limit. The following
 - Driver mobile points require a registered driver_mobile_app source, its assigned active vehicle and an in_progress job. This implements the repository's active-work-session privacy requirement.
 - Device credentials are configured server-side separately from Login JWTs. They can ingest only their registered device; they cannot administer devices or act as external Integration API keys.
 - GPS older than 5 minutes is marked delayed; source timestamps over 30 seconds ahead are rejected. History defaults to 24 hours, permits at most 31 days per request and limits results to 500. These values are implementation policies.
-- Connection cancellation uses the boolean connection_config.disabled key described below. Provider credential encryption/storage workflows are not exposed by the current API.
+- Connection cancellation uses the boolean connection_config.disabled key described below.
+- Data quality (PDF 5.3): every GPS point in a response has `anomalies` (`[]`, `null_island`, `impossible_speed`; the last means more than 250 km/h from the stored point before it). `GET .../locations` adds `meta.gaps` (`{from, to, minutes}` for stretches over 10 minutes without a point among the returned points). Abnormal points are stored and flagged, never dropped. These are derived fields, not Data Dictionary columns, and the thresholds are implementation policies.
 
 The old GPS prototype's field names, numeric IDs and credential configuration are incompatible with this contract. Other developers must update those callers; passing Backend tests does not verify an untested Frontend or provider client.
 

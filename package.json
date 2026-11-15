@@ -1,14 +1,32 @@
 {
   "name": "vayro-fleet-tracking",
   "private": true,
-  "workspaces": ["apps/*", "gateway", "services/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "gateway",
+    "services/*",
+    "packages/*"
+  ],
+  "trustedDependencies": [
+    "prisma",
+    "@prisma/engines",
+    "@prisma/client"
+  ],
   "scripts": {
     "dev:web": "bun --cwd apps/web dev",
     "dev:gateway": "bun --cwd gateway dev",
     "dev:auth": "bun --cwd services/auth-service dev",
+    "dev:company": "bun --cwd services/company-service dev",
     "dev:user": "bun --cwd services/user-service dev",
     "dev:vehicle": "bun --cwd services/vehicle-service dev",
+    "dev:gps-device": "bun --cwd services/gps-device-service dev",
+    "dev:gps-data": "bun --cwd services/gps-data-service dev",
     "dev:tracking": "bun --cwd services/tracking-service dev",
-    "dev:notification": "bun --cwd services/notification-service dev"
+    "dev:route-history": "bun --cwd services/route-history-service dev",
+    "dev:transport": "bun --cwd services/transport-service dev",
+    "dev:alert": "bun --cwd services/alert-service dev",
+    "dev:reporting": "bun --cwd services/reporting-service dev",
+    "dev:integration": "bun --cwd services/integration-service dev",
+    "db:generate": "bun run --filter './services/*' db:generate"
   }
 }
