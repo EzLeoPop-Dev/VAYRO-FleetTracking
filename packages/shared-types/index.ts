@@ -99,6 +99,8 @@ export interface GpsDevice {
   source_type: GpsSourceType;
   provider_name: string | null;
   connection_config: Record<string, unknown> | null;
+  /** Provider credentials are stored encrypted and never returned; this only says whether any are set. */
+  has_credentials: boolean;
   connection_status: GpsConnectionStatus;
   last_received_at: string | null;
   created_at: string;
@@ -111,6 +113,8 @@ export interface CreateGpsDeviceRequest {
   source_type: GpsSourceType;
   provider_name?: string | null;
   connection_config?: Record<string, unknown> | null;
+  /** Write-only secrets for a provider; null removes them. Never put secrets in connection_config. */
+  credentials?: Record<string, unknown> | null;
 }
 export type UpdateGpsDeviceRequest = Partial<Omit<CreateGpsDeviceRequest, "company_id">>;
 export interface IngestGpsRequest {
@@ -137,4 +141,11 @@ export interface GpsLocation {
   recorded_at: string;
   received_at: string;
   freshness: "current" | "delayed";
+  /** Empty for a normal point. null_island = (0, 0); impossible_speed = over 250 km/h from the stored point before it. */
+  anomalies: ("null_island" | "impossible_speed")[];
+}
+export interface GpsGap {
+  from: string;
+  to: string;
+  minutes: number;
 }

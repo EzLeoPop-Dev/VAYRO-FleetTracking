@@ -17,6 +17,7 @@
 | Web dashboard | Next.js + TypeScript | หน้าบริหารแพลตฟอร์มและบริษัท, ตารางรถ/งาน, รายงาน และมุมมองติดตาม |
 | Backend/API | Elysia + Bun | ยืนยันตัวตนและสิทธิ์, API ของผลิตภัณฑ์, รับข้อมูลตำแหน่ง และประสานงานกับข้อมูล |
 | Database | PostgreSQL | จัดเก็บข้อมูลบริษัท รถ งาน ตำแหน่ง ประวัติ แจ้งเตือน และกิจกรรม |
+| ORM / migrations | Prisma | แต่ละ service มี `prisma/schema.prisma` และ migration ของตัวเอง; ฐานข้อมูลแยกต่อ service (ดู docs/DATABASE.md) |
 | Data API | PostgREST | เปิด endpoint สำหรับข้อมูล PostgreSQL ให้ backend ใช้ตามความเหมาะสม; ไม่ใช่ตัวฐานข้อมูล |
 | แผนที่สำหรับเดโม | MapLibre GL JS + OpenFreeMap | แผนที่เวกเตอร์ OpenStreetMap สำหรับมุมมอง 2D และ 3D |
 | 3D UI | Three.js | แสดงฉาก/รถ/เส้นทางใน dashboard โดยอิงข้อมูลพิกัดและสถานะจริงที่มี |
@@ -27,28 +28,64 @@
 
 ## 3. โครงสร้างและสถานะปัจจุบัน
 
-Backend ใช้ Data Dictionary เป็นสัญญาโครงสร้างฐานข้อมูล มีครบ 14 ตาราง และมี REST API สำหรับ Auth, User และ GPS Device/Data หน้าเว็บยังใช้ข้อมูลจำลองและรอเชื่อมต่อ API
+The project brief (PDF page 7, "Modular Monolith แยก 12 Service Modules") defines **12 service modules**, listed with their endpoints on PDF pages 18-26. All 12 now exist as folders under `services/`. Each service that owns data has its own database (one Postgres server, one database and login role per service) and is managed with Prisma. Services never read each other's tables: they call each other's `/internal/*` API with `INTERNAL_API_TOKEN`. Field names, ids and the 14-table Data Dictionary contract are unchanged. Ownership and migration steps are in [DATABASE.md](DATABASE.md).
+
+| # | Service folder | Database | Tables it owns | Status |
+| --- | --- | --- | --- | --- |
+| 1 | `auth-service` | `auth_db` | `auth_sessions` | done (4 endpoints) |
+| 2 | `company-service` | `company_db` | `company` | `POST /companies/register` + internal lookup; rest of the list is to do |
+| 3 | `user-service` | `user_db` | `users` | done (8 endpoints) |
+| 4 | `vehicle-service` | `vehicle_db` | `vehicle_types`, `vehicles` | data only; internal lookup, public API to do |
+| 5 | `gps-device-service` | `gps_device_db` | `gps_devices` | done (6 endpoints, encrypted provider credentials) |
+| 6 | `gps-data-service` | `gps_data_db` | `gps_locations` | done (3 endpoints, abnormal/missing-data detection, event push) |
+| 7 | `tracking-service` | none | none | empty skeleton |
+| 8 | `route-history-service` | none | none | empty skeleton |
+| 9 | `transport-service` | `transport_db` | `transport_jobs` | data only; internal lookup, public API to do |
+| 10 | `alert-service` (Alert & Geofence) | `alert_db` | `alert_rules`, `geofences`, `alerts` | data only; skeleton |
+| 11 | `reporting-service` | none | none | empty skeleton |
+| 12 | `integration-service` (Integration & Logging) | `integration_db` | `api_integrations`, `api_request_logs`, `system_log` | data only; skeleton |
+
+Every service has a `README.md` with its PDF endpoint checklist, the internal API it offers, and the data it must ask other services for. Skeletons already boot, answer the Docker health check, and have `src/plugins/guard.ts` ready for protected routes.
 
 ```text
 apps/web/                            # Next.js, หน้า auth และ Dashboard จำลอง
 apps/web/app/dashboard/              # แผนที่ ภาพรวม รถ คนขับ งาน และเมนูเพิ่มเติม
-services/auth-service/               # Authentication + existing company registration helper
-services/user-service/               # User management and own profile
-services/tracking-service/           # GPS Device/Data, now PostgreSQL-backed
-packages/shared-types/               # Shared Auth/User/GPS request/response types
-gateway/                            # JWT-preserving routing for implemented APIs
-infra/database/001_auth.sql          # Four initial Auth/User tables
-infra/database/002_align_auth_dictionary.sql
-infra/database/003_fleet_dictionary.sql  # Remaining ten tables and ownership constraints
-docs/data-dictionary.json            # Machine-readable 14-table field contract
+gateway/                             # routes public paths to the 12 services (route table); never proxies /internal/*
+services/*-service/                  # the 12 modules above
+packages/service-kit/                # shared plumbing: ApiError/ok/http plugin, ids, internal-call client, audit helper, auth guard factory
+packages/shared-types/               # shared Auth/User/GPS request/response types
+infra/database/init/                 # creates one database + role per service on a new volume
+infra/database/split-legacy.sh       # one-time copy from the old shared database
+infra/database/legacy/               # old shared-schema SQL, reference only
+docs/data-dictionary.json            # machine-readable 14-table field contract
 docs/API_DATA_CONTRACT.md            # Canonical fields and API representation
-docs/DATABASE.md                     # Safe migrations and schema verification
-compose.yaml                        # PostgreSQL + Auth/User/GPS/Gateway + Web
+docs/DATABASE.md                     # database ownership, Prisma workflow, migration from the shared database
+compose.yaml                         # PostgreSQL + the 12 services + gateway + optional Web
 ```
 
-Implemented: Auth four endpoints, User eight endpoints, and the existing GPS Device/Data endpoints using persisted data. GPS validates real vehicles and company ownership, accepts assigned Driver mobile data during an in-progress job, and preserves positions after Tracking restart. GPS provider adapters, encrypted-provider credential management, other domain service APIs, APK and real hardware remain separate work. Vehicle/Job/Alert/Geofence/Integration tables are ready for their service owners.
+Every service with a database has `prisma/schema.prisma`, `prisma/migrations/` and `prisma.config.ts`; the generated client lives in `src/generated/` (not committed).
 
-Root dev scripts for Vehicle/Notification still point at services not yet implemented. See the shared contract before writing those APIs; do not invent alternate field spellings. IDs are BIGINT strings; timestamps are UTC ISO 8601; GPS values use speed_kmh, direction_degree, accuracy_meters and gps_location_id.
+Inside a service the code is split by responsibility (examples from the three built services):
+
+```text
+auth-service/src                     user-service/src                      gps-data-service/src
+  config/env.ts                        config/env.ts                         config/env.ts
+  lib/    prisma, audit, jwt, ...      lib/    prisma, audit, password       lib/        prisma
+  adapters/user-service.ts             adapters/auth-service.ts, company-    adapters/   fleet-directory, device-directory,
+  plugins/guard.ts                       service.ts                            identity, device-tokens
+  modules/auth     routes/service/     plugins/guard.ts                      routes/     locations, internal (HTTP only)
+  modules/session  repository          modules/users  routes/service/        schemas/    request schemas + row -> API mapping
+  modules/internal routes                repository/model, internal           application/ use cases (ingest, queries)
+  app.ts, index.ts                     app.ts, index.ts                      domain/     pure GPS rules (freshness, limits)
+                                                                             infrastructure/ Prisma repositories
+```
+
+Rule of thumb: routes only parse HTTP and call a service/use case; services/use cases hold the rules and transactions; repositories are the only code that touches Prisma models; adapters wrap other services so tests can replace them with fakes.
+
+gps-data-service serves the three endpoints the PDF lists for service 6: `POST /api/v1/gps/ingest`, `GET /api/v1/gps/vehicles/:vehicleId/latest` and `/locations`. Services 7 (`/api/v1/tracking/*`: every vehicle's latest position with filters) and 8 (`/api/v1/routes/*`: route points and summary) are different endpoints; they are to read gps-data-service's `/internal/locations*`.
+
+All functions the PDF lists for services 1, 3, 5 and 6 are implemented. gps-data-service pushes new points only to services named in `GPS_EVENT_SUBSCRIBERS`; no service receives them yet (Alert & Geofence will).
+Root dev scripts exist for all 12 services. See the shared contract before writing new APIs; do not invent alternate field spellings. IDs are BIGINT strings; timestamps are UTC ISO 8601; GPS values use speed_kmh, direction_degree, accuracy_meters and gps_location_id.
 
 ### สถานะหน้าเว็บ
 
@@ -77,7 +114,8 @@ Root dev scripts for Vehicle/Notification still point at services not yet implem
 │   ├── notification-service/        # กฎแจ้งเตือนและสถานะการจัดการ
 │   └── reporting-service/           # รายงาน/aggregation เมื่อมีความจำเป็น
 ├── packages/
-│   └── shared-types/                # DTO/API contracts และชนิดข้อมูลร่วม
+│   ├── shared-types/                # DTO/API contracts และชนิดข้อมูลร่วม
+│   └── service-kit/                 # ท่อร่วมของทุก service (http, id, internal call, audit, guard)
 ├── infra/
 │   ├── docker/                      # Dockerfiles/config เฉพาะบริการเมื่อจำเป็น
 │   └── database/                    # migrations, schema และ seed สำหรับ local demo

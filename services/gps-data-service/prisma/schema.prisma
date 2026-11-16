@@ -1,0 +1,34 @@
+// gps-data-service owns stored GPS positions. Database: gps_data_db.
+// company_id / vehicle_id / gps_device_id point at other services' data: plain values, no foreign keys.
+// They are checked over HTTP (vehicle-service, gps-device-service) before every write.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// CHECK constraints Prisma cannot express live in migrations/*/migration.sql
+// (latitude/longitude ranges, speed_kmh >= 0, direction_degree 0..359, accuracy_meters >= 0).
+model GpsLocation {
+  gps_location_id    BigInt   @id @default(autoincrement())
+  company_id         BigInt
+  vehicle_id         BigInt
+  gps_device_id      BigInt?
+  external_record_id String?  @db.VarChar(100)
+  latitude           Decimal  @db.Decimal(10, 7)
+  longitude          Decimal  @db.Decimal(10, 7)
+  speed_kmh          Decimal? @db.Decimal(7, 2)
+  direction_degree   Int?     @db.SmallInt
+  accuracy_meters    Decimal? @db.Decimal(8, 2)
+  recorded_at        DateTime @db.Timestamptz(6)
+  received_at        DateTime @default(now()) @db.Timestamptz(6)
+
+  @@unique([gps_device_id, external_record_id])
+  @@index([company_id, vehicle_id, recorded_at], map: "gps_locations_vehicle_time_idx")
+  @@index([gps_device_id, received_at], map: "gps_locations_device_received_idx")
+  @@map("gps_locations")
+}

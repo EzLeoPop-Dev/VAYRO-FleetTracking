@@ -1,7 +1,4 @@
-import { Elysia } from "elysia";
-import { userRoutes } from "./users";
+import { app } from "./app";
 
-new Elysia()
-  .get("/", () => ({ service: "user-service", status: "ok" }))
-  .use(userRoutes)
-  .listen({ hostname: process.env.HOST ?? "0.0.0.0", port: Number(process.env.PORT ?? 3000) });
+app.listen({ hostname: process.env.HOST ?? "0.0.0.0", port: Number(process.env.PORT ?? 3000) });
+console.log(`user-service listening on ${app.server?.hostname}:${app.server?.port}`);

@@ -1,14 +1,14 @@
 # VAYRO FleetTracking
 
 โครงเริ่มต้นของระบบติดตามรถหลายบริษัท ใช้ Next.js, Elysia และ Bun workspaces
-Backend ปัจจุบันมี Authentication, User และ GPS Device/Data ที่บันทึก PostgreSQL โดยใช้ schema ครบ 14 ตารางตาม Data Dictionary
+Backend แบ่งเป็น 12 Service Modules ตามเอกสารโครงการ (หน้า 18-26) แต่ละ service ที่เก็บข้อมูลมีฐานข้อมูล PostgreSQL ของตัวเองและใช้ Prisma ที่ทำเสร็จแล้ว: Authentication, User, GPS Device, GPS Data และส่วนสมัครบริษัท; ที่เหลือมีชั้นข้อมูลและโครงเปล่าพร้อมให้ทีมต่อ (ดู README ในแต่ละ `services/*-service`)
 ดู [Auth](docs/AUTH.md), [User](docs/USER.md), [ฐานข้อมูลกลาง](docs/DATABASE.md) และ [สัญญาข้อมูล API](docs/API_DATA_CONTRACT.md); API ของโมดูลธุรกิจอื่นยังไม่ได้สร้าง
 
 หน้าเว็บเปิด Dashboard ติดตามรถจำลอง และมีหน้า Login/Register ทดลอง การเชื่อมหน้าเว็บกับ API เป็นงานขั้นถัดไป
 
 ## รันด้วย Docker
 
-Existing databases: apply migrations 002 and 003 using docs/DATABASE.md before using the GPS endpoints. New volumes initialize all fourteen tables automatically. Do not reset the volume to upgrade.
+Existing installs (old shared `vayro` database): follow "Existing install" in docs/DATABASE.md to move the data into the per-service databases. New volumes set everything up automatically. Do not reset the volume to upgrade.
 
 ติดตั้งและเปิด Docker Desktop (Linux containers) พร้อม Docker Compose v2 แล้วรัน:
 
@@ -25,14 +25,15 @@ docker compose up --build -d --wait
 | Gateway | http://localhost:3001 |
 | Authentication service | http://localhost:3002 |
 | User service | http://localhost:3003 |
-| GPS Device/Data (PostgreSQL) | http://localhost:3004 |
+| GPS Data service (ingest, latest, history) | http://localhost:3004 |
+| Company, Vehicle, GPS Device, Tracking, Route History, Transport, Alert, Reporting, Integration | ผ่าน gateway เท่านั้น (ไม่เปิดพอร์ตออกเครื่อง) |
 
-The Backend schema contains all 14 Data Dictionary tables, with PostgreSQL-backed GPS Device/Data. See [shared schema and migration commands](docs/DATABASE.md), [API field contract](docs/API_DATA_CONTRACT.md) and [integration status](docs/INTEGRATION.md).
+Each service owns its tables in its own database (auth_db, company_db, user_db, vehicle_db, gps_device_db, gps_data_db, transport_db, alert_db, integration_db). See [shared schema and migration commands](docs/DATABASE.md), [API field contract](docs/API_DATA_CONTRACT.md) and [integration status](docs/INTEGRATION.md).
 
 แต่ละ container ใช้พอร์ต 3000 ภายในและ bind host port เฉพาะ localhost
-Compose มี PostgreSQL (ไม่เปิดพอร์ตออกเครื่อง) ที่สร้างตารางจาก `infra/database/*.sql` ตอนสร้าง volume ครั้งแรก
-ต้องมี `.env` (`POSTGRES_PASSWORD`, `JWT_SECRET`) ก่อนรัน ไม่มีข้อมูล GPS จริงในชุดนี้
-gateway ส่ง /api/v1/auth, /api/v1/users และ /api/v1/gps* ไป Backend ที่เกี่ยวข้อง โดยใช้ PostgreSQL เดียวกัน
+Compose มี PostgreSQL (ไม่เปิดพอร์ตออกเครื่อง) ที่สร้างฐานข้อมูลต่อ service จาก `infra/database/init/` ตอนสร้าง volume ครั้งแรก ส่วนตารางสร้างโดย Prisma migration ของแต่ละ service ตอน container เริ่มทำงาน
+ต้องมี `.env` (`POSTGRES_PASSWORD`, `JWT_SECRET`, `INTERNAL_API_TOKEN`) ก่อนรัน ไม่มีข้อมูล GPS จริงในชุดนี้
+gateway ส่งทุก path ใน /api/v1 ไป service ที่เป็นเจ้าของตามตาราง route ใน `gateway/src/index.ts`; service เรียกกันเองผ่าน /internal/* (gateway ไม่ส่งต่อ)
 health check ตรวจ HTTP `/` ของแต่ละบริการ ไม่ได้ตรวจฟังก์ชันธุรกิจ
 
 ```sh
@@ -52,6 +53,7 @@ Docker ใช้ Bun 1.3.14 และ root `bun.lock` ด้วย `--frozen-loc
 
 ```sh
 bun install --frozen-lockfile
+bun run db:generate   # สร้าง Prisma client ของแต่ละ service
 bun run dev:web
 ```
 
@@ -78,7 +80,7 @@ bun run dev:auth
 ```
 
 บน macOS/Linux ใช้ `PORT=3001 bun run dev:gateway` และ `PORT=3002 bun run dev:auth`
-สคริปต์สำหรับ User และ GPS คือ `bun run dev:user` และ `bun run dev:tracking` ตั้งค่า PostgreSQL และตัวแปรสภาพแวดล้อมตามเอกสารของแต่ละบริการก่อนรัน ส่วน `dev:vehicle` และ `dev:notification` ยังไม่มี service รองรับ
+การรัน service เดี่ยว ๆ ต้องตั้ง `DATABASE_URL`, `INTERNAL_API_TOKEN` และ URL ของ service ที่มันเรียก (ดู `compose.yaml`)
 
 อ่าน [โครงสร้างและขอบเขตโครงการ](docs/PROJECT_STRUCTURE.md) และ [คู่มือสำหรับ agent](AGENTS.md) ก่อนพัฒนาต่อ
 ชุดนี้เตรียมสำหรับรันในเครื่อง ยังต้องพัฒนา business logic อื่นและตรวจความปลอดภัยก่อนใช้งานจริง

@@ -1,0 +1,77 @@
+// integration-service (Integration & Logging) owns api_integrations, api_request_logs and system_log.
+// Database: integration_db. company_id / created_by point at other services' data: plain values, no foreign keys.
+//
+// system_log note: every service with a database also keeps its own system_log (same shape) so a change and its
+// audit row commit together. This table is for events written by this service and for the GET /system-logs view.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum IntegrationStatus {
+  active
+  revoked
+  disabled
+
+  @@map("integration_status")
+}
+
+// CHECK constraints Prisma cannot express live in migrations/*/migration.sql
+// (rate_limit_per_minute and duration_ms 0..4294967295, http_status 0..65535).
+model ApiIntegration {
+  integration_id        BigInt            @id @default(autoincrement())
+  company_id            BigInt
+  integration_name      String            @db.VarChar(120)
+  api_key_prefix        String            @db.VarChar(20)
+  api_key_hash          String            @db.VarChar(255)
+  permissions           Json
+  rate_limit_per_minute BigInt?
+  integration_status    IntegrationStatus @default(active)
+  created_by            BigInt
+  created_at            DateTime          @default(now()) @db.Timestamptz(6)
+  last_used_at          DateTime?         @db.Timestamptz(6)
+  revoked_at            DateTime?         @db.Timestamptz(6)
+  request_logs          ApiRequestLog[]
+
+  @@map("api_integrations")
+}
+
+model ApiRequestLog {
+  api_log_id     BigInt          @id @default(autoincrement())
+  integration_id BigInt?
+  company_id     BigInt
+  http_method    String          @db.VarChar(10)
+  endpoint       String          @db.VarChar(255)
+  http_status    Int?
+  request_at     DateTime        @default(now()) @db.Timestamptz(6)
+  duration_ms    BigInt?
+  request_id     String?         @db.VarChar(100)
+  source_ip      String?         @db.VarChar(45)
+  integration    ApiIntegration? @relation(fields: [integration_id], references: [integration_id], onDelete: Restrict)
+
+  @@index([company_id, request_at], map: "api_request_logs_company_time_idx")
+  @@map("api_request_logs")
+}
+
+// Never store secrets or Authorization headers in old_value/new_value.
+model SystemLog {
+  system_log_id BigInt   @id @default(autoincrement())
+  company_id    BigInt?
+  user_id       BigInt?
+  action        String   @db.VarChar(120)
+  entity_type   String?  @db.VarChar(80)
+  entity_id     String?  @db.VarChar(80)
+  old_value     Json?
+  new_value     Json?
+  result        String   @default("success") @db.VarChar(10)
+  ip_address    String?  @db.VarChar(45)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([company_id, created_at], map: "system_log_company_idx")
+  @@map("system_log")
+}

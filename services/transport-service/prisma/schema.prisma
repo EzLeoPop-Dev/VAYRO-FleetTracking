@@ -1,0 +1,69 @@
+// transport-service owns transport jobs. Database: transport_db.
+// company_id / vehicle_id / driver_id / created_by point at other services' data: plain values, no foreign keys.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum JobStatus {
+  pending
+  assigned
+  in_progress
+  completed
+  cancelled
+  problem
+
+  @@map("job_status")
+}
+
+// CHECK constraints Prisma cannot express live in migrations/*/migration.sql (coordinate ranges).
+model TransportJob {
+  job_id             BigInt    @id @default(autoincrement())
+  company_id         BigInt
+  job_code           String    @db.VarChar(50)
+  job_name           String?   @db.VarChar(150)
+  pickup_address     String    @db.VarChar(255)
+  pickup_latitude    Decimal?  @db.Decimal(10, 7)
+  pickup_longitude   Decimal?  @db.Decimal(10, 7)
+  delivery_address   String    @db.VarChar(255)
+  delivery_latitude  Decimal?  @db.Decimal(10, 7)
+  delivery_longitude Decimal?  @db.Decimal(10, 7)
+  vehicle_id         BigInt?
+  driver_id          BigInt?
+  scheduled_start_at DateTime? @db.Timestamptz(6)
+  scheduled_end_at   DateTime? @db.Timestamptz(6)
+  actual_start_at    DateTime? @db.Timestamptz(6)
+  actual_end_at      DateTime? @db.Timestamptz(6)
+  job_status         JobStatus @default(pending)
+  problem_note       String?
+  created_by         BigInt
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at         DateTime  @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@unique([company_id, job_code])
+  @@index([company_id, vehicle_id, driver_id, job_status], map: "transport_jobs_active_lookup_idx")
+  @@map("transport_jobs")
+}
+
+// Audit trail of this service only. Never store secrets in old_value/new_value.
+model SystemLog {
+  system_log_id BigInt   @id @default(autoincrement())
+  company_id    BigInt?
+  user_id       BigInt?
+  action        String   @db.VarChar(120)
+  entity_type   String?  @db.VarChar(80)
+  entity_id     String?  @db.VarChar(80)
+  old_value     Json?
+  new_value     Json?
+  result        String   @default("success") @db.VarChar(10)
+  ip_address    String?  @db.VarChar(45)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([company_id, created_at], map: "system_log_company_idx")
+  @@map("system_log")
+}
