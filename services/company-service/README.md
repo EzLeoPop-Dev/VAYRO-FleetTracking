@@ -18,6 +18,8 @@ Company workspaces: registration request, Platform Admin approval / rejection / 
 - [ ] `PATCH /api/v1/companies/:id/reject`
 - [ ] `PATCH /api/v1/companies/:id/status`
 
+Registration (`POST /companies/register`) spans two services and is safe against a lost reply: if creating the first admin gets no answer, company-service looks the admin up before deleting anything (see `docs/DATABASE.md`).
+
 Every endpoint must check Authentication, Role and `company_id` from the signed-in user, never from the request body (PDF page 18).
 
 ## Internal API other services call (not routed by the gateway, needs `x-internal-token`)

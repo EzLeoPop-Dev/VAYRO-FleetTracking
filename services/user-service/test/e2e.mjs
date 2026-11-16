@@ -119,4 +119,34 @@ try {
 } finally {
   psql(`DROP TRIGGER ${rejectAudit} ON system_log; DROP FUNCTION ${rejectAudit}()`);
 }
+// Re-opening an account must end the sessions it had before (they would otherwise work again the moment it is active)
+const reopenEmail = `reopen-${suffix}@example.test`;
+r = await call("POST", "/users", platform, { full_name: "Reopen Test", email: reopenEmail, password, role: "driver", company_id: b.id });
+check("Create a user to suspend and reopen", r.status === 201);
+const reopenId = r.data.user_id;
+const before = (await call("POST", "/auth/login", null, { email: reopenEmail, password })).data;
+check("User signs in before suspension", !!before?.access_token);
+check("Suspend the user", (await call("PATCH", `/users/${reopenId}/status`, platform, { account_status: "suspended" })).status === 200);
+check("Suspended user's refresh token is dead", (await call("POST", "/auth/refresh", null, { refresh_token: before.refresh_token })).status === 401);
+check("Reactivate the user", (await call("PATCH", `/users/${reopenId}/status`, platform, { account_status: "active" })).status === 200);
+check("After reactivation the old access token is still dead", (await call("GET", "/auth/me", before.access_token)).status === 401);
+check("After reactivation the old refresh token is still dead", (await call("POST", "/auth/refresh", null, { refresh_token: before.refresh_token })).status === 401);
+check("The user can sign in again", (await call("POST", "/auth/login", null, { email: reopenEmail, password })).status === 200);
+
+// Internal "create first admin" is safe to repeat (needs the internal token and the user-service port; skipped otherwise)
+if (process.env.INTERNAL_API_TOKEN) {
+  const internal = async (method, path, body) => {
+    const response = await fetch(`http://127.0.0.1:${process.env.USER_PORT ?? 3003}${path}`, { method, headers: { "x-internal-token": process.env.INTERNAL_API_TOKEN, ...(body ? { "content-type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
+    return { status: response.status, ...(await response.json()) };
+  };
+  const adminEmail = `first-admin-${suffix}@example.test`;
+  const admin = { company_id: b.id, full_name: "First Admin", email: adminEmail, password, role: "company_admin" };
+  const first = await internal("POST", "/internal/users", admin);
+  check("Internal create makes the first admin (201)", first.status === 201 && first.data.role === "company_admin");
+  const again = await internal("POST", "/internal/users", admin);
+  check("Repeating it succeeds without a second account (200, same user)", again.status === 200 && again.data.user_id === first.data.user_id);
+  check("The e-mail in another company is a conflict", (await internal("POST", "/internal/users", { ...admin, company_id: a.id })).status === 409);
+  check("Lookup finds the admin in its company", (await internal("GET", `/internal/users/lookup?company_id=${b.id}&email=${encodeURIComponent(adminEmail)}`)).status === 200);
+  check("Lookup does not find it in another company", (await internal("GET", `/internal/users/lookup?company_id=${a.id}&email=${encodeURIComponent(adminEmail)}`)).status === 404);
+}
 console.log(`${checks} User Service checks passed`);
