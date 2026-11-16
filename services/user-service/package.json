@@ -5,7 +5,8 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bunx --bun prisma migrate deploy && bun src/index.ts",
     "db:generate": "bunx --bun prisma generate",
-    "db:migrate": "bunx --bun prisma migrate deploy"
+    "db:migrate": "bunx --bun prisma migrate deploy",
+    "test": "bun test"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",

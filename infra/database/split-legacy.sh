@@ -1,7 +1,12 @@
 #!/bin/sh
-# One-time move of existing data from the old shared database (vayro) into the per-service databases.
+# Moves data from the old shared database (vayro) into the per-service databases, and checks that it arrived.
 # Read-only on the old database: nothing is deleted from it, so it stays as a backup.
-# Refuses to touch a table that already has rows, so running it twice is harmless.
+#
+# Safe to run again, at any time. For every table it copies the source rows the target does not have yet (matched on the
+# primary key; a row already in the target is never overwritten), then checks that EVERY source row is in the target.
+# A table that was only partly copied is therefore completed, never skipped. If a source row cannot be copied (for example
+# its e-mail already belongs to a different row in the target) the table is reported as MISSING and the script exits 1.
+# Rows the services wrote after the move are left alone.
 #
 # Order (from the repo root):
 #   1. docker compose exec -T postgres sh /docker-entrypoint-initdb.d/01-create-databases.sh
@@ -11,19 +16,38 @@ set -eu
 U="${POSTGRES_USER:-vayro}"
 SRC="${LEGACY_DB:-vayro}"
 failed=0
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
 
 # copy <db> <table> <id column> <columns> [source filter]
 copy() {
   db=$1 table=$2 idcol=$3 cols=$4 where=${5:-TRUE}
-  have=$(psql -U "$U" -d "$db" -tAc "SELECT count(*) FROM $table")
-  if [ "$have" != 0 ]; then echo "skip   $db.$table (already has $have rows)"; return; fi
-  want=$(psql -U "$U" -d "$SRC" -tAc "SELECT count(*) FROM $table WHERE $where")
-  psql -U "$U" -d "$SRC" -c "\\copy (SELECT $cols FROM $table WHERE $where ORDER BY 1) TO STDOUT" |
-    psql -v ON_ERROR_STOP=1 -U "$U" -d "$db" -c "\\copy $table ($cols) FROM STDIN"
-  # BIGSERIAL sequences must continue after the copied ids
-  psql -v ON_ERROR_STOP=1 -U "$U" -d "$db" -tAc "SELECT setval(pg_get_serial_sequence('$table', '$idcol'), COALESCE(max($idcol), 1), max($idcol) IS NOT NULL) FROM $table" >/dev/null
-  got=$(psql -U "$U" -d "$db" -tAc "SELECT count(*) FROM $table")
-  if [ "$got" = "$want" ]; then echo "copied $db.$table ($got rows)"; else echo "MISMATCH $db.$table: source $want, copied $got"; failed=1; fi
+  want=$(psql -U "$U" -d "$SRC" -tAc "SELECT count(*) FROM $table WHERE $where") || { echo "FAILED $db.$table: cannot read the old database"; failed=1; return; }
+  # Read the source into a file first, so a failed read cannot look like "nothing to copy".
+  if ! psql -v ON_ERROR_STOP=1 -U "$U" -d "$SRC" -c "\\copy (SELECT $cols FROM $table WHERE $where ORDER BY 1) TO STDOUT" > "$tmp"; then
+    echo "FAILED $db.$table: cannot read the old database"; failed=1; return
+  fi
+  before=$(psql -U "$U" -d "$db" -tAc "SELECT count(*) FROM $table")
+  # One transaction: load the source rows into a temporary table, insert the ones the target lacks, then count how many
+  # source ids are present afterwards.
+  if ! result=$({
+    printf 'BEGIN;\nCREATE TEMP TABLE _src (LIKE %s INCLUDING DEFAULTS) ON COMMIT DROP;\nCOPY _src (%s) FROM STDIN;\n' "$table" "$cols"
+    cat "$tmp"
+    printf '\\.\nINSERT INTO %s (%s) SELECT %s FROM _src ON CONFLICT DO NOTHING;\n' "$table" "$cols" "$cols"
+    printf "SELECT (SELECT count(*) FROM _src) || '|' || (SELECT count(*) FROM %s WHERE %s IN (SELECT %s FROM _src));\nCOMMIT;\n" "$table" "$idcol" "$idcol"
+  } | psql -q -v ON_ERROR_STOP=1 -U "$U" -d "$db" -tA); then
+    echo "FAILED $db.$table: could not write to the new database"; failed=1; return
+  fi
+  read_rows=${result%%|*}
+  present=${result##*|}
+  # BIGSERIAL sequences must continue after the copied ids (never move one backwards).
+  psql -v ON_ERROR_STOP=1 -U "$U" -d "$db" -tAc "SELECT setval(pg_get_serial_sequence('$table', '$idcol'), m) FROM (SELECT max($idcol) AS m FROM $table) x WHERE m IS NOT NULL AND m > COALESCE((SELECT last_value FROM pg_sequences WHERE sequencename = split_part(pg_get_serial_sequence('$table', '$idcol'), '.', 2)), 0)" >/dev/null
+  after=$(psql -U "$U" -d "$db" -tAc "SELECT count(*) FROM $table")
+  if [ "$read_rows" = "$want" ] && [ "$present" = "$want" ]; then
+    echo "ok      $db.$table: all $want source rows present ($((after - before)) copied now, $((present - (after - before))) were already there)"
+  else
+    echo "MISSING $db.$table: source has $want rows, $present are in the new database"; failed=1
+  fi
 }
 
 LOG="system_log_id, company_id, user_id, action, entity_type, entity_id, old_value, new_value, result, ip_address, created_at"
