@@ -27,6 +27,8 @@ Every endpoint must check Authentication, Role and `company_id` from the signed-
 
 - `GET /internal/devices/by-code?company_id=&device_code=`
 - `POST /internal/devices/:id/received` `{received_at}`
+- `GET /internal/stats/devices?company_id=` counts by derived connection status (for reporting-service)
+- `GET /internal/devices?company_id=&vehicle_ids=` the devices of a company or of some vehicles (for reporting-service)
 
 ## Data it needs from other services (ask them over `/internal/*`, never their database)
 

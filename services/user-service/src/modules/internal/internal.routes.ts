@@ -1,4 +1,4 @@
-import { ApiError, http, idSchema, internalGuard, ok, parseId } from "@vayro/service-kit";
+import { ApiError, http, idSchema, internalGuard, ok, parseId, sum, zeroFilled } from "@vayro/service-kit";
 import { Elysia, t } from "elysia";
 import { config } from "../../config/env";
 import { audit } from "../../lib/audit";
@@ -22,6 +22,17 @@ export const internalRoutes = new Elysia({ prefix: "/internal" }).use(http).use(
     if (!user) throw new ApiError(404, "NOT_FOUND", "User not found");
     return ok(publicUser(user));
   }, { params: t.Object({ id: idSchema }) })
+  // Counts of users by role and by account status, for one company or (without company_id) the whole platform.
+  .get("/stats/users", async ({ query }) => {
+    const where = query.company_id ? { company_id: parseId(query.company_id) } : {};
+    const [roles, statuses] = await Promise.all([
+      prisma.user.groupBy({ by: ["role"], where, _count: { _all: true } }),
+      prisma.user.groupBy({ by: ["account_status"], where, _count: { _all: true } }),
+    ]);
+    const by_role = zeroFilled(["platform_admin", "company_admin", "dispatcher", "driver"], roles.map((r) => [r.role, r._count._all] as const));
+    const by_status = zeroFilled(["active", "inactive", "suspended"], statuses.map((r) => [r.account_status, r._count._all] as const));
+    return ok({ total: sum(by_role), by_role, by_status });
+  }, { query: t.Object({ company_id: t.Optional(idSchema) }) })
   // Does this e-mail belong to a user of this company? company-service asks this when a create call got no answer.
   .get("/users/lookup", async ({ query }) => {
     const user = await users.findOne(prisma, { email: query.email.trim().toLowerCase(), company_id: parseId(query.company_id) });

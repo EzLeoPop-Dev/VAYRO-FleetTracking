@@ -1,4 +1,4 @@
-import { ApiError } from "@vayro/service-kit";
+import { ApiError, sum, zeroFilled } from "@vayro/service-kit";
 import { userAdmins, type AdminDirectory } from "../../adapters/user-service";
 import { audit } from "../../lib/audit";
 import { prisma } from "../../lib/prisma";
@@ -47,6 +47,12 @@ export async function register(body: RegisterInput, ip: string | null, admins: A
   }
   await audit({ companyId: company.company_id, action: "company.register", entityType: "company", entityId: company.company_id, ip });
   return { ...company, company_id: companyId };
+}
+
+// Platform-wide count of workspaces by status (for the platform dashboard).
+export async function stats() {
+  const by_status = zeroFilled(["pending", "active", "suspended", "rejected"], (await companies.countByStatus(prisma)).map((r) => [r.workspace_status, r._count._all] as const));
+  return { total: sum(by_status), by_status };
 }
 
 export async function getWorkspace(id: bigint) {
