@@ -73,6 +73,7 @@ check("no token is 401", (await call("GET", "/dashboard/company")).status === 40
 check("a driver is refused everywhere", (await call("GET", "/dashboard/company", driver.token)).status === 403 && (await call("GET", "/reports/vehicles", driver.token)).status === 403);
 check("a company admin cannot open the platform dashboard", (await call("GET", "/dashboard/platform", A.token)).status === 403);
 check("a company user cannot ask about another company", (await call("GET", `/dashboard/company?company_id=${B.id}`, A.token)).status === 403 && (await call("GET", `/reports/jobs?company_id=${B.id}`, dispatcher.token)).status === 403);
+check("a platform admin naming a company that does not exist gets 404, not zeros", (await call("GET", "/dashboard/company?company_id=999999999999", platform)).status === 404 && (await call("GET", "/reports/jobs?company_id=999999999999", platform)).status === 404);
 check("a platform admin must name a company", (await call("GET", "/dashboard/company", platform)).status === 422 && (await call("GET", "/reports/vehicles", platform)).status === 422);
 
 // ---- company dashboard of A

@@ -4,7 +4,7 @@ Dashboards and reports per role and workspace (project PDF page 25). **Stores no
 
 ## Endpoints
 
-All of them need a signed-in user (auth-service decides who that is). `company_id` always comes from that user; a **Platform Admin** is not tied to a company, so must pass `company_id=` to see one company. Naming another company's id as a company user is `403`.
+All of them need a signed-in user (auth-service decides who that is). `company_id` always comes from that user; a **Platform Admin** is not tied to a company, so must pass `company_id=` to see one company. Naming another company's id as a company user is `403`; a Platform Admin naming a company that does not exist gets `404` (never a page of zeros).
 
 | Endpoint | Who | What |
 | --- | --- | --- |
@@ -60,7 +60,7 @@ The heavy arithmetic (distance, gaps, anomalies) runs in SQL inside gps-data-ser
 Env: `AUTH_SERVICE_URL`, `INTERNAL_API_TOKEN`, `COMPANY_SERVICE_URL`, `USER_SERVICE_URL`, `VEHICLE_SERVICE_URL`, `GPS_DEVICE_SERVICE_URL`, `GPS_DATA_SERVICE_URL`, `TRANSPORT_SERVICE_URL`, `ALERT_SERVICE_URL` (all set in `compose.yaml`).
 
 ```sh
-docker compose exec -T reporting-service bun test      # 24 tests, other services faked, no database
+docker compose exec -T reporting-service bun test      # 26 tests, other services faked, no database
 node services/reporting-service/test/e2e.mjs           # through the gateway; seeds two companies' data in each service's database
 ```
 

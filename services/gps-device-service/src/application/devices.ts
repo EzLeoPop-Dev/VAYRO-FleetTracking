@@ -1,6 +1,6 @@
 import { ApiError, companyScope, parseId, requireRole, sum, zeroFilled, type Identity } from "@vayro/service-kit";
 import type { VehicleDirectory } from "../adapters/vehicle-directory";
-import { connectionStatus, isDisabled, settingsOf, validateSettings, type Settings } from "../domain/device";
+import { connectionStatus, DELAYED_AFTER_MS, isDisabled, settingsOf, validateSettings, type Settings } from "../domain/device";
 import { encryptCredentials, keyFromEnv } from "../lib/crypto";
 import * as devices from "../infrastructure/device.repository";
 import { audit } from "../lib/audit";
@@ -149,11 +149,11 @@ export async function markReceived(id: string, at: Date) {
 const MAX_REPORT_DEVICES = 5000;
 
 // Counts of devices by derived connection status (a device that stopped reporting is "disconnected" whatever its stored
-// status says), for one company or the whole platform.
+// status says), for one company or the whole platform. Counted in the database, so it is exact for any number of devices.
 export async function deviceStats(companyId?: string) {
-  const rows = await devices.list(prisma, companyId ? { company_id: parseId(companyId) } : {}, MAX_REPORT_DEVICES, 0);
-  const by_connection_status = zeroFilled(["connected", "disconnected", "error"], rows.map((d) => [connectionStatus(d), 1] as const));
-  return { total: sum(by_connection_status), by_connection_status, disabled: rows.filter((d) => isDisabled(d.connection_config)).length };
+  const rows = await devices.statusCounts(prisma, companyId ? parseId(companyId) : undefined, new Date(Date.now() - DELAYED_AFTER_MS));
+  const by_connection_status = zeroFilled(["connected", "disconnected", "error"], rows.map((r) => [r.status, r.n] as const));
+  return { total: sum(by_connection_status), by_connection_status, disabled: rows.filter((r) => r.disabled).reduce((n, r) => n + r.n, 0) };
 }
 
 export async function devicesOfVehicles(companyId: string, vehicleIds?: bigint[]) {

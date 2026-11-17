@@ -29,6 +29,8 @@ export interface Page<T> { total: number; rows: T[] }
 export interface Paging { limit: number; offset: number }
 
 export interface Sources {
+  /** Does the company exist? (false = unknown id.) */
+  companyExists(companyId: string): Promise<boolean>;
   companyStats(): Promise<Counts>;
   userStats(companyId?: string): Promise<UserStats>;
   vehicleStats(companyId?: string): Promise<VehicleStats>;
@@ -63,7 +65,15 @@ export function httpSources(): Sources {
     return body.data as T;
   }
 
+  async function companyExists(companyId: string): Promise<boolean> {
+    const { status } = await company("GET", `/internal/companies/${companyId}`);
+    if (status === 404) return false;
+    if (status !== 200) throw new ApiError(502, "UPSTREAM_ERROR", `company-service returned ${status}`);
+    return true;
+  }
+
   return {
+    companyExists,
     companyStats: () => get("company-service", company, "/internal/stats/companies"),
     userStats: (companyId) => get("user-service", users, "/internal/stats/users", { company_id: companyId }),
     vehicleStats: (companyId) => get("vehicle-service", vehicles, "/internal/stats/vehicles", { company_id: companyId }),

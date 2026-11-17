@@ -46,6 +46,7 @@ function fakeSources(over: Partial<Sources> = {}) {
   const rec = <F extends (...a: any[]) => any>(method: string, fn: F) => ((...args: Parameters<F>) => { calls.push({ method, args }); return fn(...args); }) as F;
   const only = (company: string | undefined) => company === A;
   const sources: Sources = {
+    companyExists: rec("companyExists", async (c: string) => [A, B].includes(c)),
     companyStats: rec("companyStats", async () => ({ total: 5, by_status: { pending: 1, active: 3, suspended: 1, rejected: 0 } })),
     userStats: rec("userStats", async (c?: string) => ({ total: c ? 4 : 40, by_role: { platform_admin: 0, company_admin: 1, dispatcher: 1, driver: 2 }, by_status: { active: 4, inactive: 0, suspended: 0 } })),
     vehicleStats: rec("vehicleStats", async (c?: string) => (only(c) ? { total: 3, by_status: { active: 2, inactive: 0, maintenance: 1 }, with_driver: 0 } : { total: 0, by_status: { active: 0, inactive: 0, maintenance: 0 }, with_driver: 0 })),
@@ -127,6 +128,26 @@ describe("who may call what", () => {
     expect((await get(app, "/api/v1/dashboard/company", "platform")).status).toBe(422);
     expect((await get(app, "/api/v1/reports/gps", "platform")).status).toBe(422);
     expect((await get(app, `/api/v1/reports/vehicles?company_id=${A}`, "platform")).status).toBe(200);
+  });
+  test("a Platform Admin naming a company that does not exist gets 404, not a page of zeros", async () => {
+    const { sources, calls } = fakeSources();
+    const a = appWith(sources);
+    for (const path of ["/api/v1/dashboard/company", "/api/v1/reports/vehicles", "/api/v1/reports/routes", "/api/v1/reports/jobs", "/api/v1/reports/alerts", "/api/v1/reports/gps"]) {
+      const r = await get(a, `${path}?company_id=999999`, "platform");
+      expect(r.status).toBe(404); expect(r.json.error.code).toBe("NOT_FOUND");
+    }
+    expect((await get(a, `/api/v1/dashboard/company?company_id=${B}`, "platform")).status).toBe(200); // a real company without data is fine
+    // the data services were never asked about the unknown company
+    expect(calls.filter((c) => c.method !== "companyExists" && c.args[0] === "999999")).toEqual([]);
+    // company users are never looked up: their own company exists by definition
+    const before = calls.filter((c) => c.method === "companyExists").length;
+    await get(a, "/api/v1/dashboard/company", "admin-a"); await get(a, "/api/v1/reports/jobs", "dispatcher-a");
+    expect(calls.filter((c) => c.method === "companyExists").length).toBe(before);
+  });
+  test("when company-service cannot be asked, a Platform Admin gets 503 instead of a guess", async () => {
+    const a = appWith(fakeSources({ companyExists: downFor("company") as Sources["companyExists"] }).sources);
+    expect((await get(a, `/api/v1/reports/jobs?company_id=${A}`, "platform")).status).toBe(503);
+    expect((await get(a, "/api/v1/reports/jobs", "admin-a")).status).toBe(200); // company users do not depend on it
   });
   test("every query to the other services uses the company of the signed-in user", async () => {
     const { sources: s, calls } = fakeSources();

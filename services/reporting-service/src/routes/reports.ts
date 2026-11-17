@@ -3,7 +3,8 @@ import { Elysia, t } from "elysia";
 import type { Sources } from "../adapters/sources";
 import { alertsReport, collectAll, gpsReport, jobsReport, routesReport, vehiclesReport, type ReportDef } from "../application/reports";
 import { csvResponse, toCsv } from "../domain/csv";
-import { companyFor, paging, parseRange } from "../domain/rules";
+import { resolveCompany } from "../application/scope";
+import { paging, parseRange } from "../domain/rules";
 
 export interface ReportDeps {
   authed: ReturnType<typeof createAuthed>;
@@ -37,18 +38,18 @@ async function render<Row>(def: ReportDef<Row>, q: { page?: number; limit?: numb
 // (a Platform Admin must name one with company_id).
 export const reportRoutes = ({ authed, sources, clock }: ReportDeps) =>
   new Elysia({ prefix: "/api/v1/reports" }).use(http).use(authed("platform_admin", "company_admin", "dispatcher"))
-    .get("/vehicles", ({ me, query }) => render(vehiclesReport(sources, companyFor(me, query.company_id), { status: query.status }, clock()), query, clock), {
+    .get("/vehicles", async ({ me, query }) => render(vehiclesReport(sources, await resolveCompany(sources, me, query.company_id), { status: query.status }, clock()), query, clock), {
       query: t.Object({ ...common(100), status: VEHICLE_STATUS }),
     })
-    .get("/routes", ({ me, query }) => render(routesReport(sources, companyFor(me, query.company_id), { ...parseRange(query.from, query.to, 1, clock()), vehicleId: query.vehicle_id }), query, clock), {
+    .get("/routes", async ({ me, query }) => render(routesReport(sources, await resolveCompany(sources, me, query.company_id), { ...parseRange(query.from, query.to, 1, clock()), vehicleId: query.vehicle_id }), query, clock), {
       query: t.Object({ ...common(100), ...period, vehicle_id: t.Optional(idSchema) }),
     })
-    .get("/jobs", ({ me, query }) => render(jobsReport(sources, companyFor(me, query.company_id), { ...parseRange(query.from, query.to, 30, clock()), status: query.status }), query, clock), {
+    .get("/jobs", async ({ me, query }) => render(jobsReport(sources, await resolveCompany(sources, me, query.company_id), { ...parseRange(query.from, query.to, 30, clock()), status: query.status }), query, clock), {
       query: t.Object({ ...common(200), ...period, status: JOB_STATUS }),
     })
-    .get("/alerts", ({ me, query }) => render(alertsReport(sources, companyFor(me, query.company_id), { ...parseRange(query.from, query.to, 30, clock()), type: query.type, status: query.status }), query, clock), {
+    .get("/alerts", async ({ me, query }) => render(alertsReport(sources, await resolveCompany(sources, me, query.company_id), { ...parseRange(query.from, query.to, 30, clock()), type: query.type, status: query.status }), query, clock), {
       query: t.Object({ ...common(200), ...period, type: ALERT_TYPE, status: ALERT_STATUS }),
     })
-    .get("/gps", ({ me, query }) => render(gpsReport(sources, companyFor(me, query.company_id), parseRange(query.from, query.to, 1, clock()), clock()), query, clock), {
+    .get("/gps", async ({ me, query }) => render(gpsReport(sources, await resolveCompany(sources, me, query.company_id), parseRange(query.from, query.to, 1, clock()), clock()), query, clock), {
       query: t.Object({ ...common(100), ...period }),
     });
