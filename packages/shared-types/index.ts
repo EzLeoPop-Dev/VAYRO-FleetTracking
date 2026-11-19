@@ -149,3 +149,34 @@ export interface GpsGap {
   to: string;
   minutes: number;
 }
+
+// Navigation preview uses road-provider data. Coordinates in GeoJSON are [longitude, latitude].
+export interface NavigationPoint {
+  latitude: number;
+  longitude: number;
+}
+
+export interface NavigationPlace extends NavigationPoint {
+  id: string;
+  label: string;
+}
+
+export interface NavigationRouteRequest {
+  origin: NavigationPoint;
+  destination: NavigationPoint;
+}
+
+export interface NavigationRoute {
+  provider: "valhalla";
+  profile: "auto";
+  geometry: { type: "LineString"; coordinates: [number, number][] };
+  distance_meters: number;
+  duration_seconds: number;
+  steps: {
+    instruction: string;
+    distance_meters: number;
+    duration_seconds: number;
+    begin_shape_index: number;
+    end_shape_index: number;
+  }[];
+}

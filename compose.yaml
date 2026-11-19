@@ -302,6 +302,27 @@ services:
     restart: unless-stopped
     healthcheck: *healthcheck
 
+  # 13. Navigation preview. Stateless Photon geocoding and Valhalla automobile routing.
+  navigation-service:
+    build:
+      context: .
+      target: api
+      args:
+        SERVICE: services/navigation-service
+    environment:
+      <<: *internal
+      AUTH_SERVICE_URL: http://auth-service:3000
+      NAVIGATION_GEOCODING_URL: ${NAVIGATION_GEOCODING_URL:-https://photon.komoot.io/api/}
+      NAVIGATION_ROUTING_URL: ${NAVIGATION_ROUTING_URL:-https://valhalla1.openstreetmap.de/route}
+    depends_on:
+      auth-service:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${NAVIGATION_PORT:-3014}:3000"
+    init: true
+    restart: unless-stopped
+    healthcheck: *healthcheck
+
   gateway:
     build:
       context: .
@@ -321,6 +342,7 @@ services:
       ALERT_SERVICE_URL: http://alert-service:3000
       REPORTING_SERVICE_URL: http://reporting-service:3000
       INTEGRATION_SERVICE_URL: http://integration-service:3000
+      NAVIGATION_SERVICE_URL: http://navigation-service:3000
       WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-3001}:3000"

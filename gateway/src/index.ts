@@ -25,6 +25,7 @@ const ROUTES: [prefix: string, url: string][] = [
   ["/api/v1/integrations", process.env.INTEGRATION_SERVICE_URL ?? "http://127.0.0.1:3013"],
   ["/api/v1/integration-logs", process.env.INTEGRATION_SERVICE_URL ?? "http://127.0.0.1:3013"],
   ["/api/v1/system-logs", process.env.INTEGRATION_SERVICE_URL ?? "http://127.0.0.1:3013"],
+  ["/api/v1/navigation", process.env.NAVIGATION_SERVICE_URL ?? "http://127.0.0.1:3014"],
 ];
 
 // Whole path segments only: "/api/v1/gps" must not match "/api/v1/gps-fake".
