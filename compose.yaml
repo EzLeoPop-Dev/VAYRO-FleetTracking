@@ -113,7 +113,7 @@ services:
     restart: unless-stopped
     healthcheck: *healthcheck
 
-  # 4. Vehicle. Owns: vehicle_types, vehicles. Internal lookups only for now (no public API yet).
+  # 4. Vehicle. Owns vehicle_types and vehicles, with public company-scoped management APIs.
   vehicle-service:
     build:
       context: .
@@ -124,6 +124,8 @@ services:
       <<: *internal
       DATABASE_URL: postgres://vehicle_svc:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/vehicle_db
       AUTH_SERVICE_URL: http://auth-service:3000
+      USER_SERVICE_URL: http://user-service:3000
+      COMPANY_SERVICE_URL: http://company-service:3000
     depends_on:
       postgres:
         condition: service_healthy

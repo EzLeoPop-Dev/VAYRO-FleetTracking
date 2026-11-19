@@ -180,3 +180,48 @@ export interface NavigationRoute {
     end_shape_index: number;
   }[];
 }
+
+export type VehicleStatus = "active" | "inactive" | "maintenance";
+
+export interface VehicleRecord {
+  vehicle_id: string;
+  company_id: string;
+  vehicle_code: string;
+  license_plate: string;
+  vehicle_type_id: string | null;
+  current_driver_id: string | null;
+  vehicle_status: VehicleStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface VehicleTypeRecord {
+  vehicle_type_id: string;
+  company_id: string;
+  type_name: string;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateVehicleRequest {
+  /** Platform Admin selects the workspace. Company Admin is scoped to their own workspace. */
+  company_id?: string;
+  vehicle_code: string;
+  license_plate: string;
+  vehicle_type_id?: string | null;
+  current_driver_id?: string | null;
+  vehicle_status?: VehicleStatus;
+}
+
+export type UpdateVehicleRequest = Partial<Omit<CreateVehicleRequest, "company_id">>;
+
+export interface CreateVehicleTypeRequest {
+  company_id?: string;
+  type_name: string;
+  description?: string | null;
+  is_active?: boolean;
+}
+
+export type UpdateVehicleTypeRequest = Partial<Omit<CreateVehicleTypeRequest, "company_id">>;
