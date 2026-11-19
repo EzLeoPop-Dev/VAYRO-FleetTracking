@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
-import type { User, TransportJobRecord, NavigationRoute, ApiResponse } from "../../../../packages/shared-types";
+import type { AuthenticatedUser, TransportJobRecord, NavigationRoute, ApiResponse } from "../../../../packages/shared-types";
 import { logout } from "@/lib/auth-actions";
 import { transportErrorMessage, useTransportJobs, type JobAction } from "@/lib/transport-client";
 import { formatJobTime, jobDateKey, jobPlaces } from "@/lib/transport-format";
@@ -18,7 +18,7 @@ const activeStatuses = ["accepted", "in_progress", "problem"];
 const closedStatuses = ["completed", "cancelled"];
 const secondary = `min-h-11 rounded-xl border border-[var(--fleet-line)] px-3 text-sm font-semibold hover:bg-[var(--fleet-quiet)] disabled:opacity-50 ${focus}`;
 
-export default function DriverWorkspace({ user, initialNow }: { user: Pick<User, "user_id" | "full_name" | "email" | "company_id">; initialNow: string }) {
+export default function DriverWorkspace({ user, initialNow }: { user: Pick<AuthenticatedUser, "user_id" | "full_name" | "email" | "company_id" | "company_name">; initialNow: string }) {
   const { jobs, loading, error, pending, refresh, actOnJob } = useTransportJobs();
   const [view, setView] = useState<View>("home");
   const [filter, setFilter] = useState<"open" | "closed">("open");

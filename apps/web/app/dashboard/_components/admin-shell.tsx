@@ -10,11 +10,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { User } from "../../../../../packages/shared-types";
+import type { AuthenticatedUser, User } from "../../../../../packages/shared-types";
 
 type Theme = "light" | "dark";
 type DemoRole = "dispatch" | "admin";
-type DashboardUser = Pick<User, "user_id" | "full_name" | "role">;
+type DashboardUser = Pick<AuthenticatedUser, "user_id" | "full_name" | "role" | "company_id" | "company_name">;
 
 export const accountRoleLabels: Record<User["role"], string> = {
   platform_admin: "Platform Admin",

@@ -1,7 +1,7 @@
 import "server-only";
 
 import { cookies } from "next/headers";
-import type { ApiResponse, LoginRequest, LoginResponse, RegisterCompanyRequest, User } from "../../../packages/shared-types";
+import type { ApiResponse, AuthenticatedUser, LoginRequest, LoginResponse, RegisterCompanyRequest, User } from "../../../packages/shared-types";
 
 const accessCookie = "vayro_at";
 const refreshCookie = "vayro_rt";
@@ -68,7 +68,7 @@ export async function createEmployeeSession(credentials: LoginRequest) {
 export async function readSession() {
   const token = (await cookies()).get(accessCookie)?.value;
   if (!token) return { ok: false, code: "UNAUTHORIZED" } as const;
-  return requestGateway<User>("/api/v1/auth/me", { headers: { authorization: `Bearer ${token}` } });
+  return requestGateway<AuthenticatedUser>("/api/v1/auth/me", { headers: { authorization: `Bearer ${token}` } });
 }
 
 export async function destroySession() {

@@ -102,6 +102,7 @@ Root dev scripts exist for all 13 services. See the shared contract before writi
 
 ### สถานะหน้าเว็บ
 
+- Dashboard แสดงชื่อบริษัทใต้ชื่อผู้ใช้ในโปรไฟล์มุมซ้ายบน และหน้าแรก Driver แสดงชื่อบริษัทในการ์ดโปรไฟล์ โดย Auth อ่าน `company_name` จาก company-service ของบัญชีที่ยืนยันแล้ว และส่งผ่าน Login/Auth me; ใช้รหัส Workspace เป็นข้อความสำรองหากไม่มีชื่อ ไม่รับชื่อหรือรหัสบริษัทจากตัวเลือกบนหน้าเว็บ
 
 - `/` เปิด `/dashboard` ซึ่งตรวจ session กับ Gateway และพาไป `/login` หากยังไม่ได้เข้าสู่ระบบ รถและเส้นทางบนแผนที่เป็นข้อมูลจำลองที่สร้างในเบราว์เซอร์
 - `/login` รองรับ Company Admin, Dispatcher และ Driver ใน Workspace ที่เปิดใช้งาน โดยสองบทบาทแรกเข้า `/dashboard` ส่วน Driver เข้า `/driver` ซึ่งตรวจ Session/Role ผ่าน Gateway แสดงชื่อ อีเมล และรหัส Workspace จากบัญชีจริง พร้อมปุ่มออกจากระบบ ผู้ที่ยังไม่ Login จะกลับไปหน้า Login และ Driver ที่เปิด Dashboard จะถูกพาไปหน้าคนขับ

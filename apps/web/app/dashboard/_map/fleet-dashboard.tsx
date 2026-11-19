@@ -183,6 +183,9 @@ function ProfileMenu() {
           <span className="block truncate text-sm font-bold">
             {user.full_name}
           </span>
+          <span title={user.company_name ?? undefined} aria-label={`บริษัท ${user.company_name ?? `Workspace ${user.company_id}`}`} className={`block max-w-[min(55vw,20rem)] truncate text-xs font-medium ${accent}`}>
+            {user.company_name ?? `Workspace ${user.company_id}`}
+          </span>
           <span
             className={`flex items-center gap-1 whitespace-nowrap text-[11px] ${muted}`}
           >
@@ -198,6 +201,7 @@ function ProfileMenu() {
         role="group"
         aria-label="เมนูบัญชี"
       >
+        <p className={`border-b border-[var(--fleet-line)] px-2 py-2 text-xs leading-relaxed wrap-anywhere ${muted}`}>{user.company_name ?? `Workspace ${user.company_id}`}</p>
         {canPreview && <p className={`px-2 py-1.5 text-xs font-semibold ${muted}`}>
           บทบาททดสอบ
         </p>}

@@ -32,11 +32,11 @@ async function SignedInDashboard({ children }: { children: ReactNode }) {
   if (session.data.role === "driver" && session.data.company_id !== null) redirect("/driver");
   if (!canUseEmployeeWorkspace(session.data)) redirect("/login");
 
-  const { full_name, user_id, role, company_id } = session.data;
+  const { full_name, user_id, role, company_id, company_name } = session.data;
   return (
     <TransportJobsProvider key={`${company_id}:${user_id}:${role}`} mode="company">
       <FleetVehiclesProvider canManage={role === "company_admin"}>
-      <AdminShell user={{ full_name, user_id, role }} map={<FleetDashboard />}>
+      <AdminShell user={{ full_name, user_id, role, company_id, company_name }} map={<FleetDashboard />}>
         {children}
       </AdminShell>
       </FleetVehiclesProvider>

@@ -1,8 +1,8 @@
-import type { User } from "../../../../packages/shared-types";
+import type { AuthenticatedUser } from "../../../../packages/shared-types";
 import { focus, Icon, JobList, muted, primaryButton, Status, surface, type DriverJobEntry } from "./driver-ui";
 
 export default function DriverHome({ user, active, today, now, openJob, openJobs }: {
-  user: Pick<User, "user_id" | "full_name" | "email" | "company_id">;
+  user: Pick<AuthenticatedUser, "user_id" | "full_name" | "email" | "company_id" | "company_name">;
   active?: DriverJobEntry; today: DriverJobEntry[]; now: string;
   openJob: (entry: DriverJobEntry) => void; openJobs: () => void;
 }) {
@@ -12,7 +12,7 @@ export default function DriverHome({ user, active, today, now, openJob, openJobs
       <span aria-hidden="true" className="driver-route-art"><span className="driver-route-trace" /></span>
       <div className="flex min-w-0 items-center gap-3 sm:gap-4">
         <span aria-hidden="true" className="soft-control grid size-14 shrink-0 place-items-center rounded-[var(--fleet-radius)] bg-[var(--fleet-highlight)] text-xl font-bold text-[var(--fleet-accent)]">{Array.from(user.full_name.trim()).slice(0, 2).join("")}</span>
-        <div className="min-w-0"><h1 id="driver-name" data-driver-heading tabIndex={-1} className="text-2xl font-bold break-words sm:text-4xl">{user.full_name}</h1><p className={`mt-1 text-sm ${muted}`}>พนักงานขับรถ · Workspace {user.company_id}</p><p className={`mt-1 text-xs break-all ${muted}`}>{user.email}</p><p className={`mt-1 font-mono text-xs ${muted}`}>รหัสผู้ใช้ {user.user_id}</p></div>
+        <div className="min-w-0"><h1 id="driver-name" data-driver-heading tabIndex={-1} className="text-2xl font-bold break-words sm:text-4xl">{user.full_name}</h1><p className={`mt-1 text-sm ${muted}`}>พนักงานขับรถ</p><p className="mt-1 text-sm font-semibold leading-relaxed wrap-anywhere text-[var(--fleet-accent)]" aria-label={`บริษัท ${user.company_name ?? `Workspace ${user.company_id}`}`}>{user.company_name ?? `Workspace ${user.company_id}`}</p><p className={`mt-1 text-xs break-all ${muted}`}>{user.email}</p><p className={`mt-1 font-mono text-xs ${muted}`}>รหัสผู้ใช้ {user.user_id}</p></div>
       </div>
       <div className={`soft-control flex w-fit items-center gap-2 rounded-xl bg-[var(--fleet-highlight)] px-3 py-2 text-xs ${muted}`}><Icon name="calendar" className="size-4" /><time dateTime={now}>{new Intl.DateTimeFormat("th-TH", { dateStyle: "long", timeZone: "Asia/Bangkok" }).format(new Date(now))}</time></div>
     </section>

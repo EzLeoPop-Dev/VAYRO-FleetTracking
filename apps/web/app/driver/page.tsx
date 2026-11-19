@@ -35,6 +35,6 @@ async function SignedInDriver() {
   if (canUseEmployeeWorkspace(session.data)) redirect("/dashboard");
   if (session.data.role !== "driver" || session.data.company_id === null) redirect("/login");
 
-  const { user_id, full_name, email, company_id } = session.data;
-  return <TransportJobsProvider key={`${company_id}:${user_id}`} mode="driver"><DriverWorkspace user={{ user_id, full_name, email, company_id }} initialNow={new Date().toISOString()} /></TransportJobsProvider>;
+  const { user_id, full_name, email, company_id, company_name } = session.data;
+  return <TransportJobsProvider key={`${company_id}:${user_id}`} mode="driver"><DriverWorkspace user={{ user_id, full_name, email, company_id, company_name }} initialNow={new Date().toISOString()} /></TransportJobsProvider>;
 }

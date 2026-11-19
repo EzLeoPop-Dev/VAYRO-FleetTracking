@@ -2,6 +2,14 @@
 
 Feature versions are cumulative Git tags on the vayro-frontend branch. Dates use Asia/Bangkok. Older versions v0.1.0-v0.3.0 retain their original tags.
 
+## v0.8.0 - 2026-11-19 - Company identity on Dashboard and Driver
+
+- Auth enriches login and auth/me with the signed-in account company name obtained from Company Service.
+- Display the real company name beneath the Dashboard profile and in the Driver home profile; support narrow screens and long names.
+- Use the workspace id as a fallback when a name is unavailable, keeping server-side company authorization unchanged.
+- Release-head verification: Auth + Navigation 16 tests, Vehicle 11 tests and Transport 7 tests; web ESLint, TypeScript and production build with Webpack. Real Admin/Driver browser flows and database persistence were also verified during implementation.
+- Default Turbopack production build previously failed to launch its CSS worker on this Windows host; the Webpack build was used. No live GPS or employee email invitations are included.
+
 ## v0.7.0 - 2026-11-19 - Connected Dashboard and Driver web
 
 - Connect employee login and workspace registration to Gateway/Auth using HttpOnly cookies, session/role guards and logout.

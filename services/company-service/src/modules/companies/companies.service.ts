@@ -41,5 +41,5 @@ export async function register(body: RegisterInput, ip: string | null) {
 
 export async function getWorkspace(id: bigint) {
   const company = await companies.findById(prisma, id);
-  return company && { company_id: String(company.company_id), workspace_status: company.workspace_status };
+  return company && { company_id: String(company.company_id), company_name: company.company_name, workspace_status: company.workspace_status };
 }

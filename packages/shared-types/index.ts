@@ -35,6 +35,11 @@ export interface LoginRequest {
   password: string;
 }
 
+/** Signed-in identity enriched by Auth with its own workspace's display name. */
+export interface AuthenticatedUser extends User {
+  company_name: string | null;
+}
+
 export interface TokenPair {
   access_token: string;
   refresh_token: string;
@@ -43,7 +48,7 @@ export interface TokenPair {
   expires_in: number;
 }
 
-export type LoginResponse = TokenPair & { user: User };
+export type LoginResponse = TokenPair & { user: AuthenticatedUser };
 
 export interface RefreshRequest {
   refresh_token: string;
