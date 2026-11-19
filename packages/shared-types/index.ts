@@ -225,3 +225,56 @@ export interface CreateVehicleTypeRequest {
 }
 
 export type UpdateVehicleTypeRequest = Partial<Omit<CreateVehicleTypeRequest, "company_id">>;
+
+export type TransportJobStatus = "pending" | "assigned" | "accepted" | "in_progress" | "completed" | "cancelled" | "problem";
+
+export interface TransportJobRecord {
+  job_id: string;
+  company_id: string;
+  job_code: string;
+  job_name: string | null;
+  pickup_address: string;
+  pickup_latitude: number | null;
+  pickup_longitude: number | null;
+  delivery_address: string;
+  delivery_latitude: number | null;
+  delivery_longitude: number | null;
+  vehicle_id: string | null;
+  driver_id: string | null;
+  scheduled_start_at: string | null;
+  scheduled_end_at: string | null;
+  accepted_at: string | null;
+  actual_start_at: string | null;
+  actual_end_at: string | null;
+  job_status: TransportJobStatus;
+  problem_note: string | null;
+  cargo_description: string | null;
+  route_snapshot: NavigationRoute | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  vehicle: { vehicle_id: string; vehicle_code: string; license_plate: string; vehicle_type_name: string | null } | null;
+  driver: { user_id: string; full_name: string; email: string } | null;
+}
+
+export interface CreateTransportJobRequest {
+  company_id?: string;
+  job_code: string;
+  job_name?: string | null;
+  pickup_address: string;
+  delivery_address: string;
+  pickup_latitude?: number | null;
+  pickup_longitude?: number | null;
+  delivery_latitude?: number | null;
+  delivery_longitude?: number | null;
+  cargo_description?: string | null;
+  route_snapshot?: NavigationRoute | null;
+  scheduled_start_at?: string | null;
+  scheduled_end_at?: string | null;
+  vehicle_id?: string | null;
+  driver_id?: string | null;
+}
+
+export type UpdateTransportJobRequest = Partial<Omit<CreateTransportJobRequest, "company_id">>;
+export interface AssignTransportJobRequest { vehicle_id: string | null; driver_id: string | null }
+export interface TransportJobProblemRequest { problem_note: string }

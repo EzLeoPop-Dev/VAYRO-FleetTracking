@@ -224,7 +224,7 @@ services:
     restart: unless-stopped
     healthcheck: *healthcheck
 
-  # 9. Transport Job. Owns: transport_jobs. Internal lookups only for now (no public API yet).
+  # 9. Transport Job. Owns: transport_jobs. Assignment and Driver lifecycle APIs.
   transport-service:
     build:
       context: .
@@ -235,6 +235,9 @@ services:
       <<: *internal
       DATABASE_URL: postgres://transport_svc:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/transport_db
       AUTH_SERVICE_URL: http://auth-service:3000
+      USER_SERVICE_URL: http://user-service:3000
+      VEHICLE_SERVICE_URL: http://vehicle-service:3000
+      COMPANY_SERVICE_URL: http://company-service:3000
     depends_on:
       postgres:
         condition: service_healthy

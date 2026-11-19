@@ -10,18 +10,29 @@ Transport jobs: create, assign vehicle and driver, start, complete, report a pro
 
 ## Public endpoints (from the project PDF, pages 18-26)
 
-- [ ] `GET /api/v1/jobs`
-- [ ] `GET /api/v1/jobs/:id`
-- [ ] `POST /api/v1/jobs`
-- [ ] `PUT /api/v1/jobs/:id`
-- [ ] `PATCH /api/v1/jobs/:id/assign`
-- [ ] `PATCH /api/v1/jobs/:id/start`
-- [ ] `PATCH /api/v1/jobs/:id/complete`
-- [ ] `PATCH /api/v1/jobs/:id/problem`
-- [ ] `PATCH /api/v1/jobs/:id/cancel`
-- [ ] `GET /api/v1/driver/jobs`
+- [x] `GET /api/v1/jobs`
+- [x] `GET /api/v1/jobs/:id`
+- [x] `POST /api/v1/jobs`
+- [x] `PUT /api/v1/jobs/:id`
+- [x] `PATCH /api/v1/jobs/:id/assign`
+- [x] `PATCH /api/v1/jobs/:id/accept`
+- [x] `PATCH /api/v1/jobs/:id/start`
+- [x] `PATCH /api/v1/jobs/:id/complete`
+- [x] `PATCH /api/v1/jobs/:id/problem`
+- [x] `PATCH /api/v1/jobs/:id/cancel`
+- [x] `GET /api/v1/driver/jobs`
 
 Every endpoint must check Authentication, Role and `company_id` from the signed-in user, never from the request body (PDF page 18).
+
+Company Admin and Dispatcher manage jobs in their company; Platform Admin may filter by company and must select one on creation. Driver reads their own job detail/list and performs accept/start/complete/problem actions. Managers cannot perform these actions on a driver's behalf.
+
+Creation requires `job_code`, `pickup_address`, `delivery_address`; optional fields are described by `CreateTransportJobRequest` in shared-types. Supplying both vehicle and driver makes a job `assigned`, otherwise `pending`. Assign accepts both nullable ids; it never changes the vehicle's permanent driver. Only pending/assigned jobs can be edited. Reads return `TransportJobRecord` with vehicle/driver display metadata. Lists are arrays, default 50/max 100 rows, with `limit`, `offset`, `q`, `job_status` and company filtering. IDs are strings and dates are UTC ISO strings.
+
+Lifecycle: `assigned → accepted → in_progress → completed`; accepted/in-progress jobs can report a problem and resume with start. Cancel is allowed for managers from any nonterminal state. Exact retries of accept/start/complete/cancel and identical problem reports are idempotent and preserve timestamps. Accepted, in-progress and problem jobs reserve both driver and vehicle; concurrent accepts use transaction advisory locks. Jobs may queue in assigned state. Vehicle and Driver must be active and belong to the same company on creation/assignment and accept/start. Directory service lookups do not create cross-service database transactions.
+
+GPS is not part of these actions. Optional cargo is plain text (max 2000 characters); route snapshots are bounded Valhalla/auto road previews with at most 25,000 coordinates and 2,000 steps. Coordinate pairs must both be set or both null; scheduled dates require a timezone and end must follow start. Stored snapshots are previews, not GPS history. Audit rows are atomic with state changes and omit route geometry, addresses and free text.
+
+Transport requires `DATABASE_URL`, `INTERNAL_API_TOKEN`, `AUTH_SERVICE_URL`, `USER_SERVICE_URL`, `VEHICLE_SERVICE_URL`, `COMPANY_SERVICE_URL`. Run migrations and generate the client before starting. `bun test` uses the service's PostgreSQL database with unique test company ids and fake auth/directory adapters; test fixtures are retained.
 
 ## Internal API other services call (not routed by the gateway, needs `x-internal-token`)
 
