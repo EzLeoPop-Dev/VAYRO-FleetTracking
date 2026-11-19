@@ -54,15 +54,16 @@ Send `Authorization: Bearer <access_token>`. Responses use `{success, data, mess
 
 ## Web (apps/web)
 
-The following describes a previously tested local prototype, not a Frontend delivered by the Backend branch. Frontend files remain uncommitted locally and are excluded from this change. The committed APIs can be tested independently with Postman.
+Start PostgreSQL, Auth and Gateway through Compose (`docker compose up -d --build --wait postgres company-service user-service auth-service gateway`). Open `/login` with an active Company Admin, Dispatcher or Driver account in an active workspace. For a fresh local database, use `POST /api/v1/companies/register` to create a test workspace and its Company Admin, then activate the test workspace in the local `company_db` database. See [DATABASE.md](DATABASE.md) for existing installs.
 
-Pages: `/login`, `/register`, `/dashboard` (any signed-in user), `/users` (Company Admin only). `/` redirects by session.
-
-- The browser never calls the gateway. Server Actions and Server Components call it with `API_URL` (Compose: `http://gateway:3000`).
-- Tokens live in httpOnly cookies `vayro_at` (access, 15 min) and `vayro_rt` (refresh, 7 days). Set `COOKIE_SECURE=true` when served over HTTPS.
-- An expired access token sends the page through `GET /session/refresh?next=...`, which rotates the refresh token and redirects back. Nav links use `prefetch={false}` because a background prefetch must not trigger a rotation (a reused rotated token revokes all sessions).
-- Role checks in the UI only hide links; the API enforces role and company on every call.
-- Verified in the in-app browser on Docker: register, login (error keeps the email), dashboard, create user, change role/status, logout, refresh route (including replay and `next=//evil.test`).
+- Next.js calls the Gateway from the server using `API_URL` (Compose: `http://gateway:3000`, local default: `http://127.0.0.1:3001`).
+- Login stores `vayro_at` and `vayro_rt` as HttpOnly, SameSite=Lax cookies for the access token lifetime. `vayro_rt` is used for logout. When the access token expires, sign in again. Set `COOKIE_SECURE=true` on HTTPS deployments and `COOKIE_SECURE=false` when running a local production build over plain HTTP.
+- The Dashboard checks `/api/v1/auth/me` and displays the signed-in name and role. Company Admin can use TestRole to preview the Dispatch interface. Backend authorization applies to protected API calls.
+- The employee web login routes Company Admin and Dispatcher to `/dashboard`, and Driver to `/driver`. The Driver page verifies the session and role through the Gateway, displays the signed-in name/email/workspace id, and offers logout. Dashboard requests from a Driver redirect to `/driver`; company dashboard users visiting `/driver` return to their Dashboard. Owner and Platform Admin pages are pending.
+- Driver login uses a real database account created by an authorized administrator through `POST /api/v1/users` with role `driver`. Driver jobs and job-state changes use Transport through the Gateway, with database persistence. The home page derives work notices from assigned jobs. Road routes use Navigation previews without live GPS. Test credentials are generated at provision time and are never committed.
+- Sign out from the Dashboard profile menu or More page, or the fourth item in the Driver bottom menu. The Driver menu also appears in the expanded map sheet. Its logout button is disabled while submitting. The web clears both cookies and asks Auth to revoke the session.
+- The `/register` form calls `POST /api/v1/companies/register` through the Gateway and shows a pending confirmation. It uses the first admin's name and email as the company contact. The workspace must be activated before the admin can sign in.
+- The Dashboard tracking map and overview use simulated fleet data. Vehicle management and transport jobs use real company-scoped APIs; the User API is available independently and the Add Employee invitation form is still a demo.
 
 ## Not done / known limits
 

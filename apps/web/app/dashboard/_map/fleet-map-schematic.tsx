@@ -1,5 +1,5 @@
 import { useId } from "react";
-import type { FleetVehicle, VehicleStatus } from "./fleet-demo";
+import type { FleetVehicle, VehicleStatus } from "../_data/fleet-demo";
 
 export const vehicleColors: Record<VehicleStatus, string> = {
   moving: "#63bb38",

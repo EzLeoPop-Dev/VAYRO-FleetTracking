@@ -125,3 +125,74 @@ body {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+@media (prefers-reduced-motion: no-preference) {
+  .layout-wheel {
+    --wheel-ease: cubic-bezier(0.23, 1, 0.32, 1);
+    transition: display 190ms allow-discrete, overlay 190ms allow-discrete;
+  }
+
+  .layout-wheel:not([open]),
+  .layout-wheel:not([open])::backdrop {
+    pointer-events: none;
+  }
+
+  .layout-wheel::backdrop {
+    opacity: 0;
+    transition: opacity 190ms ease-out, display 190ms allow-discrete, overlay 190ms allow-discrete;
+  }
+
+  .layout-wheel-surface {
+    clip-path: circle(12% at center);
+    opacity: 0;
+    transition: clip-path 190ms var(--wheel-ease), opacity 190ms ease-out;
+  }
+
+  .layout-wheel [data-wheel-option] {
+    --wheel-option-start: translate(var(--wheel-option-x, 0), var(--wheel-option-y, 0)) scale(0.9);
+    transform: var(--wheel-option-start);
+    transition: transform 190ms var(--wheel-ease);
+  }
+
+  .layout-wheel [data-wheel-option="summary"] { --wheel-option-y: 150%; }
+  .layout-wheel [data-wheel-option="details"] { --wheel-option-y: -150%; }
+  .layout-wheel [data-wheel-option="list"] { --wheel-option-x: -65%; }
+  .layout-wheel [data-wheel-option="alerts"] { --wheel-option-x: 65%; }
+
+  .layout-wheel [data-wheel-option="list"],
+  .layout-wheel [data-wheel-option="alerts"] {
+    --wheel-option-delay: 30ms;
+  }
+
+  .layout-wheel[open]::backdrop {
+    opacity: 1;
+    transition-duration: 240ms;
+  }
+
+  .layout-wheel[open] .layout-wheel-surface {
+    clip-path: circle(76% at center);
+    opacity: 1;
+    transition-duration: 240ms;
+  }
+
+  .layout-wheel[open] [data-wheel-option] {
+    transform: none;
+    transition-duration: 240ms;
+    transition-delay: var(--wheel-option-delay, 0ms);
+  }
+
+  @starting-style {
+    .layout-wheel[open]::backdrop {
+      opacity: 0;
+    }
+
+    .layout-wheel[open] .layout-wheel-surface {
+      clip-path: circle(12% at center);
+      opacity: 0;
+    }
+
+    .layout-wheel[open] [data-wheel-option] {
+      transform: var(--wheel-option-start);
+    }
+  }
+}

@@ -1,13 +1,14 @@
-import { AdminPage, directorySurface } from "../admin-directory";
+import { AdminPage, directorySurface } from "../_components/admin-directory";
+import TransportJobList from "../_components/transport-job-list";
 
 export const metadata = { title: "งานขนส่ง | VAYRO" };
 
 export default function JobsPage() {
   return (
     <AdminPage title="งานขนส่ง" description="จุดรับ–ส่ง รถ และคนขับที่ได้รับมอบหมายในแต่ละงาน">
-      <section className={`${directorySurface} p-5 sm:p-7`} aria-labelledby="jobs-empty">
-        <h2 id="jobs-empty" className="font-semibold">ยังไม่มีงานขนส่ง</h2>
-        <p className="mt-2 text-sm text-[color:var(--fleet-muted)]">ชุดข้อมูลจำลองปัจจุบันมีข้อมูลรถและคนขับ</p>
+      <section className={`${directorySurface} p-4 sm:p-6`} aria-labelledby="jobs-preview">
+        <h2 id="jobs-preview" className="mb-3 font-semibold">รายการงานขนส่ง</h2>
+        <TransportJobList />
       </section>
     </AdminPage>
   );

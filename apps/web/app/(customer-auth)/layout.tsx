@@ -68,7 +68,7 @@ export default function CustomerAuthLayout({
         className="relative grid min-h-dvh content-center justify-items-center px-[clamp(2rem,6vw,6.5rem)] pb-[5.5rem] pt-16 max-[920px]:px-10 max-[720px]:min-h-dvh max-[720px]:content-start max-[720px]:justify-items-stretch max-[720px]:px-[1.4rem] max-[720px]:pb-20 max-[720px]:pt-5 max-[390px]:px-[1.1rem]"
         aria-labelledby="auth-title"
       >
-        <div className="mb-[clamp(3rem,9vh,5rem)] hidden max-[720px]:block">
+        <div className="mb-8 hidden max-[720px]:block">
           <Link
             className="inline-flex w-fit items-center gap-3 text-[color:var(--fleet-text)] no-underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--fleet-focus)]"
             href="/"

@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { AdminPage, demoFleet, directorySurface } from "../admin-directory";
-import TestRolePanel from "../test-role-panel";
+import { logout } from "@/lib/auth-actions";
+import { AdminPage, demoFleet, directorySurface } from "../_components/admin-directory";
+import TestRolePanel from "./test-role-panel";
 
 export const metadata = { title: "เพิ่มเติม | VAYRO" };
 
@@ -42,12 +43,11 @@ export default function MorePage() {
             Workspace
           </h2>
           <div className="mt-3 flex flex-wrap gap-2 text-sm">
-            <Link
-              href="/login"
-              className="rounded-lg bg-[var(--fleet-quiet)] px-3 py-2.5 hover:bg-[var(--fleet-selected)]"
-            >
-              เข้าสู่ระบบ
-            </Link>
+            <form action={logout}>
+              <button type="submit" className="cursor-pointer rounded-lg bg-[var(--fleet-quiet)] px-3 py-2.5 hover:bg-[var(--fleet-selected)]">
+                ออกจากระบบ
+              </button>
+            </form>
             <Link
               href="/register"
               className="rounded-lg bg-[var(--fleet-quiet)] px-3 py-2.5 hover:bg-[var(--fleet-selected)]"

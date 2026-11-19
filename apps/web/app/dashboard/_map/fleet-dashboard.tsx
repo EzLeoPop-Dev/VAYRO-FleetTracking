@@ -7,18 +7,24 @@ import {
   useState,
   useSyncExternalStore,
   type ReactNode,
+  type RefObject,
 } from "react";
-import { demoRoleLabels, useAdminTheme, useDemoRole } from "./admin-shell";
+import { logout } from "@/lib/auth-actions";
+import { accountRoleLabels, demoRoleLabels, useAdminTheme, useDashboardUser, useDemoRole } from "../_components/admin-shell";
+import { getDemoAlerts } from "../_data/fleet-alerts";
 import {
   getDemoFleet,
   type FleetVehicle,
   type VehicleCategory,
   type VehicleStatus,
-} from "./fleet-demo";
+} from "../_data/fleet-demo";
 import FleetMap from "./fleet-map";
+import FleetAlertsPanel from "./fleet-alerts-panel";
+import { MapPanelCollapse, MapPanelHandle, type Offset, type PanelSize } from "./map-panel-drag";
 
 type MapView = "2d" | "3d";
 type FleetFilter = "all" | VehicleStatus;
+type MovablePanel = "summary" | "list" | "details" | "alerts";
 
 const statusMeta: Record<FleetFilter, { label: string; dot: string }> = {
   all: { label: "รถทั้งหมด", dot: "bg-[var(--fleet-signal)]" },
@@ -83,7 +89,8 @@ const icons = {
     </>
   ),
   check: <path d="m5 12 4 4 10-10" />,
-  chevrons: <path d="m5 6 6 6-6 6m7-12 6 6-6 6" />,
+  bell: <path d="M18 8a6 6 0 0 0-12 0c0 6-3 7-3 9h18c0-2-3-3-3-9m-8 12a2 2 0 0 0 4 0" />,
+  info: <><circle cx="12" cy="12" r="9" /><path d="M12 11v5m0-8h.01" /></>,
   layout: (
     <>
       <rect x="3.5" y="4" width="17" height="16" rx="2" />
@@ -140,12 +147,14 @@ function isDesktopViewport() {
 }
 
 function ProfileMenu() {
-  const { role, selectRole } = useDemoRole();
-  const profileTrigger = useRef<HTMLElement>(null);
+  const user = useDashboardUser();
+  const { role, canPreview, selectRole } = useDemoRole();
+
+  if (!user) return null;
 
   function closeMenu(details: HTMLDetailsElement) {
     details.open = false;
-    profileTrigger.current?.focus();
+    details.querySelector("summary")?.focus();
   }
 
   return (
@@ -162,7 +171,6 @@ function ProfileMenu() {
       }}
     >
       <summary
-        ref={profileTrigger}
         className={`flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-xl pr-1 hover:bg-[var(--fleet-quiet)] [&::-webkit-details-marker]:hidden ${focus}`}
       >
         <span
@@ -173,17 +181,12 @@ function ProfileMenu() {
         </span>
         <span className="min-w-0">
           <span className="block truncate text-sm font-bold">
-            กานต์ วัฒนกุล
+            {user.full_name}
           </span>
           <span
             className={`flex items-center gap-1 whitespace-nowrap text-[11px] ${muted}`}
           >
-            บัญชีทดลอง
-            {role && (
-              <span className={`font-semibold ${accent}`}>
-                · {demoRoleLabels[role]}
-              </span>
-            )}
+            {accountRoleLabels[user.role]}
           </span>
         </span>
         <span className={muted} aria-hidden="true">
@@ -193,12 +196,12 @@ function ProfileMenu() {
       <div
         className={`${panel} absolute left-0 top-full z-10 mt-2 w-44 p-1.5`}
         role="group"
-        aria-label="เปลี่ยนบทบาททดสอบ"
+        aria-label="เมนูบัญชี"
       >
-        <p className={`px-2 py-1.5 text-xs font-semibold ${muted}`}>
+        {canPreview && <p className={`px-2 py-1.5 text-xs font-semibold ${muted}`}>
           บทบาททดสอบ
-        </p>
-        {(["admin", "dispatch"] as const).map((option) => (
+        </p>}
+        {canPreview && (["admin", "dispatch"] as const).map((option) => (
           <button
             key={option}
             type="button"
@@ -214,70 +217,96 @@ function ProfileMenu() {
             {role === option && <Icon name="check" size={15} />}
           </button>
         ))}
+        <form action={logout}>
+          <button type="submit" className={`min-h-10 w-full cursor-pointer rounded-xl px-2 text-left text-sm font-medium hover:bg-[var(--fleet-quiet)] ${focus}`}>
+            ออกจากระบบ
+          </button>
+        </form>
       </div>
     </details>
   );
 }
 
 type LayoutPanel = {
-  id: string;
+  id: MovablePanel;
   label: string;
   visible: boolean;
   disabled?: boolean;
   toggle: () => void;
 };
 
-function LayoutMenu({ panels }: { panels: LayoutPanel[] }) {
+const layoutOptions = {
+  summary: { icon: "signal", position: "left-1/2 top-[8%] w-[38%] -translate-x-1/2" },
+  list: { icon: "truck", position: "right-[5%] top-1/2 w-[32%] -translate-y-1/2" },
+  details: { icon: "info", position: "left-1/2 bottom-[8%] w-[38%] -translate-x-1/2" },
+  alerts: { icon: "bell", position: "left-[5%] top-1/2 w-[32%] -translate-y-1/2" },
+} as const;
+
+function LayoutMenu({ panels, toggleRef, alertsVisible }: {
+  panels: LayoutPanel[];
+  toggleRef: RefObject<HTMLButtonElement | null>;
+  alertsVisible: boolean;
+}) {
   const [open, setOpen] = useState(false);
-  const toggleRef = useRef<HTMLButtonElement>(null);
-  const toggleLabel = open ? "พับเมนูจัดหน้าจอ" : "กางเมนูจัดหน้าจอ";
+  const dialog = useRef<HTMLDialogElement>(null);
+
+  function closeMenu() {
+    dialog.current?.close();
+  }
 
   return (
-    <div
-      role="group"
-      aria-label="จัดหน้าจอแผนที่"
-      onKeyDown={(event) => {
-        if (event.key !== "Escape" || !open) return;
-        event.preventDefault();
-        setOpen(false);
-        toggleRef.current?.focus();
-      }}
-      className={`${panel} absolute right-3 top-[min(19.75rem,50dvh)] z-40 grid max-w-[calc(100%-1.5rem)] items-center p-1 transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none lg:bottom-8 lg:right-4 lg:top-auto ${open ? "grid-cols-[1fr_auto]" : "grid-cols-[0fr_auto]"}`}
-    >
-      <div
-        id="map-layout-panels"
-        inert={!open}
-        className="min-w-0 overflow-hidden"
-      >
-        <div className="flex w-max items-center gap-1 pr-1">
-          {panels.map(({ id, label, visible, disabled, toggle }) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={visible}
-              disabled={disabled}
-              title={disabled ? "เลือกรถเพื่อดูรายละเอียด" : undefined}
-              onClick={toggle}
-              className={`min-h-11 cursor-pointer whitespace-nowrap rounded-lg px-2 text-[11px] font-semibold disabled:cursor-default disabled:opacity-50 sm:px-3 sm:text-xs ${visible ? `bg-[var(--fleet-selected)] ${accent}` : `${muted} hover:bg-[var(--fleet-quiet)]`} ${focus} focus-visible:outline-offset-[-2px]`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+    <>
+      <div className={`${panel} absolute right-3 top-[min(19.75rem,50dvh)] z-[47] p-1 lg:bottom-8 lg:right-4 lg:top-auto ${alertsVisible ? "max-lg:z-40" : ""}`}>
+        <button
+          ref={toggleRef}
+          type="button"
+          aria-controls="map-layout-panels"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label="กางเมนูจัดหน้าจอ"
+          title="จัดหน้าจอแผนที่"
+          onClick={() => {
+            dialog.current?.showModal();
+            setOpen(true);
+          }}
+          className={`${control} size-11 px-0`}
+        >
+          <Icon name="layout" size={18} />
+        </button>
       </div>
-      <button
-        ref={toggleRef}
-        type="button"
-        aria-controls="map-layout-panels"
-        aria-expanded={open}
-        aria-label={toggleLabel}
-        title={toggleLabel}
-        onClick={() => setOpen(!open)}
-        className={`${control} size-11 px-0`}
+
+      <dialog
+        ref={dialog}
+        id="map-layout-panels"
+        aria-labelledby="map-layout-title"
+        onClose={() => setOpen(false)}
+        onClick={(event) => {
+          if (event.target === event.currentTarget) closeMenu();
+        }}
+        className="layout-wheel fixed inset-0 m-auto size-[min(20rem,calc(100vw-1.5rem),calc(100dvh-1.5rem))] max-h-none max-w-none overflow-visible bg-transparent p-0 text-[color:var(--fleet-text)] backdrop:bg-slate-950/40"
       >
-        <Icon name={open ? "chevrons" : "layout"} size={18} />
-      </button>
-    </div>
+        <div className="layout-wheel-surface relative size-full rounded-full border border-[var(--fleet-line)] bg-[var(--fleet-surface)] shadow-[var(--fleet-shadow-window)]">
+          <h2 id="map-layout-title" className="sr-only">จัดหน้าจอแผนที่</h2>
+          <span aria-hidden="true" className="pointer-events-none absolute inset-[16%] rounded-full border border-dashed border-[var(--fleet-line)]" />
+          <button type="button" onClick={closeMenu} aria-label="ปิดเมนูจัดหน้าจอ" title="ปิดเมนูจัดหน้าจอ"
+            className={`absolute left-1/2 top-1/2 z-10 grid size-11 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full soft-control border border-[var(--fleet-line)] bg-[var(--fleet-surface)] hover:bg-[var(--fleet-selected)] ${focus}`}>
+            <Icon name="close" size={18} />
+          </button>
+          {panels.map(({ id, label, visible, disabled, toggle }) => {
+            const { icon, position } = layoutOptions[id];
+            return (
+              <button key={id} type="button" data-wheel-option={id} aria-pressed={visible} disabled={disabled}
+                title={disabled ? "เลือกรถเพื่อดูรายละเอียด" : undefined}
+                onClick={() => { closeMenu(); toggle(); }}
+                className={`absolute flex min-h-12 cursor-pointer flex-col items-center justify-center gap-0.5 rounded-full border px-1 py-1.5 text-center text-[11px] font-semibold leading-tight disabled:cursor-default disabled:opacity-55 sm:text-xs ${position} ${visible ? `soft-inset border-[var(--fleet-accent)]/30 bg-[var(--fleet-selected)] ${accent}` : `soft-control border-[var(--fleet-line)] bg-[var(--fleet-surface)] ${muted} hover:bg-[var(--fleet-quiet)]`} ${focus}`}>
+                <Icon name={icon} size={16} />
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </dialog>
+    </>
   );
 }
 
@@ -390,9 +419,17 @@ function VehicleThumbnail({ category }: { category: VehicleCategory }) {
 function VehicleDetails({
   vehicle,
   onClose,
+  moveHandle,
+  active,
+  expanded,
+  onToggle,
 }: {
   vehicle: FleetVehicle;
   onClose: () => void;
+  moveHandle: ReactNode;
+  active: boolean;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   const updateTime =
     vehicle.updatedAt > 0 ? clock.format(vehicle.updatedAt) : "—";
@@ -400,10 +437,12 @@ function VehicleDetails({
   return (
     <section
       id="vehicle-detail"
+      data-map-panel
       aria-label="รายละเอียดรถ"
-      className={`${panel} absolute inset-x-3 bottom-43 z-20 max-h-[42dvh] overflow-y-auto p-3.5 sm:bottom-28 sm:left-4 sm:right-auto sm:w-[18.5rem] lg:bottom-11`}
+      tabIndex={-1}
+      className={`${panel} absolute inset-x-3 bottom-43 max-h-[42dvh] overflow-y-auto p-3.5 outline-none sm:bottom-28 sm:left-4 sm:right-auto sm:w-[18.5rem] lg:bottom-24 ${active ? "z-[46]" : "z-20"}`}
     >
-      <div className="flex items-center gap-2.5">
+      <div className={`flex items-center gap-2.5 ${expanded ? "pr-5" : ""}`}>
         <VehicleThumbnail category={vehicle.category} />
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-bold">{vehicle.plate}</h2>
@@ -411,6 +450,8 @@ function VehicleDetails({
             {vehicle.kind} · {vehicle.id}
           </p>
         </div>
+        {moveHandle}
+        <MapPanelCollapse panelName="รายละเอียดรถ" controls="vehicle-detail-content" expanded={expanded} onToggle={onToggle} />
         <button
           type="button"
           onClick={onClose}
@@ -420,44 +461,46 @@ function VehicleDetails({
           <Icon name="close" size={16} />
         </button>
       </div>
-      <div className="my-3 flex items-center justify-between gap-2 rounded-lg bg-[var(--fleet-quiet)] px-2.5 py-2 text-xs">
-        <span className={`inline-flex items-center gap-1.5 ${muted}`}>
-          <StatusDot status={vehicle.status} />
-          {statusMeta[vehicle.status].label}
-        </span>
-        <span className="font-semibold tabular-nums">
-          {vehicle.status === "offline"
-            ? "—"
-            : `${Math.round(vehicle.speed)} กม./ชม.`}
-        </span>
-      </div>
-      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1.5 text-xs">
-        <dt className={muted}>คนขับ</dt>
-        <dd className="text-right font-semibold wrap-anywhere">
-          {vehicle.driver}
-        </dd>
-        <dt className={muted}>พื้นที่</dt>
-        <dd className="text-right font-semibold wrap-anywhere">
-          {vehicle.area}
-        </dd>
-        <dt className={muted}>พิกัดล่าสุด</dt>
-        <dd className="text-right font-mono tabular-nums">
-          {vehicle.position[1].toFixed(4)}, {vehicle.position[0].toFixed(4)}
-        </dd>
-        <dt className={muted}>อัปเดตล่าสุด</dt>
-        <dd className="text-right font-mono tabular-nums">{updateTime}</dd>
-      </dl>
-      <details
-        key={vehicle.id}
-        className="mt-3 border-t border-[var(--fleet-line)] pt-1.5"
-      >
-        <summary
-          className={`cursor-pointer rounded-md px-1 py-2 text-xs font-semibold ${accent} ${focus}`}
+      <div id="vehicle-detail-content" hidden={!expanded}>
+        <div className="my-3 flex items-center justify-between gap-2 rounded-lg bg-[var(--fleet-quiet)] px-2.5 py-2 text-xs">
+          <span className={`inline-flex items-center gap-1.5 ${muted}`}>
+            <StatusDot status={vehicle.status} />
+            {statusMeta[vehicle.status].label}
+          </span>
+          <span className="font-semibold tabular-nums">
+            {vehicle.status === "offline"
+              ? "—"
+              : `${Math.round(vehicle.speed)} กม./ชม.`}
+          </span>
+        </div>
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1.5 text-xs">
+          <dt className={muted}>คนขับ</dt>
+          <dd className="text-right font-semibold wrap-anywhere">
+            {vehicle.driver}
+          </dd>
+          <dt className={muted}>พื้นที่</dt>
+          <dd className="text-right font-semibold wrap-anywhere">
+            {vehicle.area}
+          </dd>
+          <dt className={muted}>พิกัดล่าสุด</dt>
+          <dd className="text-right font-mono tabular-nums">
+            {vehicle.position[1].toFixed(4)}, {vehicle.position[0].toFixed(4)}
+          </dd>
+          <dt className={muted}>อัปเดตล่าสุด</dt>
+          <dd className="text-right font-mono tabular-nums">{updateTime}</dd>
+        </dl>
+        <details
+          key={vehicle.id}
+          className="mt-3 border-t border-[var(--fleet-line)] pt-1.5"
         >
-          เส้นทางจำลอง
-        </summary>
-        <RoutePreview vehicle={vehicle} />
-      </details>
+          <summary
+            className={`cursor-pointer rounded-md px-1 py-2 text-xs font-semibold ${accent} ${focus}`}
+          >
+            เส้นทางจำลอง
+          </summary>
+          <RoutePreview vehicle={vehicle} />
+        </details>
+      </div>
     </section>
   );
 }
@@ -539,6 +582,14 @@ export default function FleetDashboard() {
   const [summaryVisible, setSummaryVisible] = useState(true);
   const [listVisible, setListVisible] = useState(true);
   const [detailsVisible, setDetailsVisible] = useState(true);
+  const [alertsVisible, setAlertsVisible] = useState(false);
+  const [summaryExpanded, setSummaryExpanded] = useState(true);
+  const [detailsExpanded, setDetailsExpanded] = useState(true);
+  const [alertsExpanded, setAlertsExpanded] = useState(true);
+  const layoutToggle = useRef<HTMLButtonElement>(null);
+  const [panelPositions, setPanelPositions] = useState<Partial<Record<MovablePanel, Offset>>>({});
+  const [panelSizes, setPanelSizes] = useState<Partial<Record<MovablePanel, PanelSize>>>({});
+  const [activePanel, setActivePanel] = useState<MovablePanel | null>(null);
   const [recenterKey, setRecenterKey] = useState(0);
   const [focusKey, setFocusKey] = useState(0);
   const isDesktop = useSyncExternalStore(
@@ -591,16 +642,19 @@ export default function FleetDashboard() {
     (vehicle) => vehicle.status === "offline",
   );
   const showDetails =
-    detailsVisible && selectedVehicle && (isDesktop || !listOpen);
+    detailsVisible && selectedVehicle && (isDesktop || (!listOpen && !alertsVisible));
+  const alerts = alertsVisible
+    ? getDemoAlerts(fleet, simulation.now, simulation.now > 0 ? simulation.now - simulation.elapsed * 1000 : null)
+    : [];
   const overlayInsets = {
-    top: summaryVisible ? 165 : 32,
-    right: isDesktop && listOpen ? 330 : 56,
+    top: summaryVisible ? (summaryExpanded ? 165 : 78) : 32,
+    right: isDesktop && alertsVisible ? 368 : isDesktop && listOpen ? 330 : 56,
     bottom: isDesktop
       ? 96
-      : listOpen
+      : listOpen || (alertsVisible && alertsExpanded)
         ? 472
         : showDetails
-          ? 440
+          ? (detailsExpanded ? 440 : 240)
           : listVisible
             ? 166
             : 96,
@@ -619,8 +673,34 @@ export default function FleetDashboard() {
     selectVehicle(id);
   }
 
+  function closeAlerts() {
+    setAlertsVisible(false);
+    layoutToggle.current?.focus({ preventScroll: true });
+  }
+
+  function panelHandle(id: MovablePanel, label: string, expanded: boolean) {
+    return <MapPanelHandle label={label} position={panelPositions[id]} size={panelSizes[id]} expanded={expanded}
+      corner={id === "summary" ? "bottom-right" : id === "details" ? "top-right" : "left"}
+      maxWidth={id === "list" ? 440 : undefined}
+      onActivate={() => setActivePanel(id)}
+      onPositionChange={(position) => setPanelPositions((previous) => ({ ...previous, [id]: position }))}
+      onSizeChange={(size) => setPanelSizes((previous) => ({ ...previous, [id]: size }))} />;
+  }
+
+  function inspectAlert(id: string) {
+    setAlertsVisible(false);
+    setQuery("");
+    setFilter("all");
+    setDetailsVisible(true);
+    setDetailsExpanded(true);
+    selectVehicle(id);
+    requestAnimationFrame(() => {
+      document.getElementById("vehicle-detail")?.focus({ preventScroll: true });
+    });
+  }
+
   return (
-    <main className="relative isolate h-full overflow-hidden selection:bg-[var(--fleet-selected)] selection:text-[color:var(--fleet-text)]">
+    <main className="relative isolate h-full overflow-clip selection:bg-[var(--fleet-selected)] selection:text-[color:var(--fleet-text)]">
       <section aria-label="แผนที่รถ" className="absolute inset-0">
         <FleetMap
           vehicles={visibleVehicles}
@@ -634,111 +714,114 @@ export default function FleetDashboard() {
         />
       </section>
 
+      <div data-map-drag-bounds aria-hidden="true" className="pointer-events-none absolute inset-x-1 top-[max(0.25rem,env(safe-area-inset-top))] bottom-[calc(5.5rem+env(safe-area-inset-bottom))]" />
+      <p id="map-panel-drag-help" className="sr-only">ใช้ปุ่มลูกศรเพื่อขยับแผง หรือกด Home เพื่อคืนตำแหน่งเริ่มต้น</p>
+      <p id="map-panel-resize-help" className="sr-only">ลากที่มุมแผงหรือใช้ปุ่มลูกศรเพื่อปรับขนาด กด Home เพื่อคืนขนาดและตำแหน่งเริ่มต้น</p>
+
       <header
-        className={`${panel} absolute inset-x-3 top-3 z-20 sm:left-4 sm:right-auto sm:top-4 sm:w-[24rem] ${summaryVisible ? "" : "hidden"}`}
+        data-map-panel
+        className={`${panel} absolute inset-x-3 top-3 max-h-[calc(100dvh-6rem)] data-[panel-sized=true]:overflow-y-auto sm:left-4 sm:right-auto sm:top-4 sm:w-[24rem] ${activePanel === "summary" ? "z-[46]" : "z-20"} ${summaryVisible ? "" : "hidden"}`}
       >
         <div className="flex items-center justify-between gap-2 px-2.5 py-2.5 sm:px-3">
           <h1 className="sr-only">VAYRO ติดตามตำแหน่งรถ</h1>
           <ProfileMenu />
-          <div className="flex shrink-0 items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setRunning(!running)}
-              aria-label={running ? "หยุดการจำลอง" : "เล่นการจำลองต่อ"}
-              title={running ? "หยุดการจำลอง" : "เล่นการจำลองต่อ"}
-              className={`${control} size-10 px-0`}
-            >
-              <Icon name={running ? "pause" : "play"} size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={toggleTheme}
-              aria-label="โหมดมืด"
-              aria-pressed={theme === "dark"}
-              title={theme === "dark" ? "สลับเป็นธีมสว่าง" : "สลับเป็นธีมมืด"}
-              className={`${control} size-10 px-0`}
-            >
-              <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
-            </button>
+          <div className="flex shrink-0 items-center">
+            {panelHandle("summary", "ย้ายแผงสรุปสถานะ", summaryExpanded)}
+            <MapPanelCollapse panelName="สรุปสถานะ" controls="fleet-summary-content" expanded={summaryExpanded} onToggle={() => setSummaryExpanded(!summaryExpanded)} />
           </div>
         </div>
 
-        <div
-          role="group"
-          aria-label="กรองตามสถานะรถ"
-          className="grid grid-cols-4 gap-1.5 px-2.5 py-px sm:gap-2 sm:px-3"
-        >
-          {filters.map((item) => (
-            <button
-              key={item}
-              type="button"
-              aria-pressed={filter === item}
-              onClick={() => setFilter(item)}
-              className={`flex min-h-11 min-w-0 cursor-pointer flex-col items-center justify-center rounded-[var(--fleet-radius)] border px-0.5 py-1 ${filter === item ? "soft-inset border-[var(--fleet-accent)]/30 bg-[var(--fleet-selected)]" : "soft-control border-[var(--fleet-line)] bg-[var(--fleet-surface)] hover:bg-[var(--fleet-quiet)]"} ${focus} focus-visible:outline-offset-[-2px]`}
-            >
-              <span className="flex items-center gap-1.5 font-mono text-base font-bold leading-5 tabular-nums">
-                <StatusDot status={item} />
-                {counts[item]}
-              </span>
-              <span
-                className={`whitespace-nowrap text-[10px] font-medium ${muted}`}
-              >
-                {statusMeta[item].label}
-              </span>
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 sm:px-3">
-          <span
-            className={`flex shrink-0 items-center gap-1.5 text-[11px] ${muted}`}
+        <div id="fleet-summary-content" hidden={!summaryExpanded}>
+          <div
+            role="group"
+            aria-label="กรองตามสถานะรถ"
+            className="grid grid-cols-4 gap-1.5 px-2.5 py-px sm:gap-2 sm:px-3"
           >
-            <Icon name="map" size={13} />
-            ข้อมูลจำลอง
-          </span>
-          <div className="flex items-center gap-1.5">
-            <div
-              role="group"
-              aria-label="มุมมองแผนที่"
-              className="flex items-center rounded-lg soft-inset border border-[var(--fleet-line)] bg-[var(--fleet-quiet)] p-0.5"
-            >
-              {(["2d", "3d"] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => setView(mode)}
-                  aria-pressed={view === mode}
-                  className={`min-h-8 min-w-9 cursor-pointer rounded-md px-1 font-mono text-xs font-semibold ${view === mode ? `bg-[var(--fleet-selected)] ${accent}` : muted} ${focus}`}
+            {filters.map((item) => (
+              <button
+                key={item}
+                type="button"
+                aria-pressed={filter === item}
+                onClick={() => setFilter(item)}
+                className={`flex min-h-11 min-w-0 cursor-pointer flex-col items-center justify-center rounded-[var(--fleet-radius)] border px-0.5 py-1 ${filter === item ? "soft-inset border-[var(--fleet-accent)]/30 bg-[var(--fleet-selected)]" : "soft-control border-[var(--fleet-line)] bg-[var(--fleet-surface)] hover:bg-[var(--fleet-quiet)]"} ${focus} focus-visible:outline-offset-[-2px]`}
+              >
+                <span className="flex items-center gap-1.5 font-mono text-base font-bold leading-5 tabular-nums">
+                  <StatusDot status={item} />
+                  {counts[item]}
+                </span>
+                <span
+                  className={`whitespace-nowrap text-[10px] font-medium ${muted}`}
                 >
-                  {mode.toUpperCase()}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => setRecenterKey((key) => key + 1)}
-              aria-label="จัดมุมมองให้เห็นรถทั้งหมด"
-              title="จัดมุมมองให้เห็นรถทั้งหมด"
-              disabled={visibleVehicles.length === 0}
-              className={`${control} size-9 min-h-9 px-0 disabled:cursor-default disabled:opacity-50`}
+                  {statusMeta[item].label}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-1 py-1.5 pl-2.5 pr-6 sm:pl-3">
+            <span
+              className={`flex shrink-0 items-center gap-1 text-[10px] sm:text-[11px] ${muted}`}
             >
-              <Icon name="fit" size={16} />
-            </button>
+              <span className="hidden min-[360px]:block"><Icon name="map" size={13} /></span>
+              ข้อมูลจำลอง
+            </span>
+            <div className="flex shrink-0 items-center gap-1">
+              <button type="button" onClick={() => setRunning(!running)}
+                aria-label={running ? "หยุดการจำลอง" : "เล่นการจำลองต่อ"}
+                title={running ? "หยุดการจำลอง" : "เล่นการจำลองต่อ"}
+                className={`${control} h-10 w-9 px-0`}>
+                <Icon name={running ? "pause" : "play"} size={16} />
+              </button>
+              <button type="button" onClick={toggleTheme} aria-label="โหมดมืด" aria-pressed={theme === "dark"}
+                title={theme === "dark" ? "สลับเป็นธีมสว่าง" : "สลับเป็นธีมมืด"} className={`${control} h-10 w-9 px-0`}>
+                <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
+              </button>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div
+                role="group"
+                aria-label="มุมมองแผนที่"
+                className="flex items-center rounded-lg soft-inset border border-[var(--fleet-line)] bg-[var(--fleet-quiet)] p-0.5"
+              >
+                {(["2d", "3d"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setView(mode)}
+                    aria-pressed={view === mode}
+                    className={`min-h-8 min-w-9 cursor-pointer rounded-md px-1 font-mono text-xs font-semibold ${view === mode ? `bg-[var(--fleet-selected)] ${accent}` : muted} ${focus}`}
+                  >
+                    {mode.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <button
+                type="button"
+                onClick={() => setRecenterKey((key) => key + 1)}
+                aria-label="จัดมุมมองให้เห็นรถทั้งหมด"
+                title="จัดมุมมองให้เห็นรถทั้งหมด"
+                disabled={visibleVehicles.length === 0}
+                className={`${control} size-9 min-h-9 px-0 disabled:cursor-default disabled:opacity-50`}
+              >
+                <Icon name="fit" size={16} />
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
       <aside
-        className={`pointer-events-none absolute inset-x-3 bottom-27 z-30 sm:left-auto sm:right-4 sm:w-[19.5rem] lg:bottom-auto lg:top-4 ${listVisible ? "" : "hidden"}`}
+        className={`pointer-events-none absolute inset-x-3 bottom-27 sm:left-auto sm:right-4 sm:w-[19.5rem] lg:bottom-auto lg:top-4 ${activePanel === "list" ? "z-[46]" : "z-30"} ${listVisible ? "" : "hidden"}`}
       >
         <section
+          data-map-panel
           aria-labelledby="fleet-heading"
-          className={`${panel} ml-auto overflow-hidden ${listOpen ? "flex max-h-[min(23rem,50dvh)] flex-col lg:max-h-[calc(100dvh-13rem)]" : "w-fit"}`}
+          className={`${panel} relative ml-auto overflow-hidden ${listOpen ? `flex flex-col lg:max-h-[calc(100dvh-13rem)] ${alertsVisible ? "max-lg:max-h-[min(12rem,30dvh)]" : "max-lg:max-h-[min(23rem,50dvh)]"}` : "w-fit"}`}
         >
-          <div className="flex shrink-0 items-center justify-between gap-3 px-3 py-2.5">
+          <div className={`flex shrink-0 items-center gap-1 px-3 py-2.5 ${listOpen ? "max-lg:pl-9" : ""}`}>
             <h2
               id="fleet-heading"
-              className="flex items-center gap-2 text-sm font-bold"
+              className="mr-auto flex items-center gap-2 text-sm font-bold"
             >
               <span className={accent}>
                 <Icon name="truck" size={18} />
@@ -751,23 +834,8 @@ export default function FleetDashboard() {
                 {visibleVehicles.length}/{fleet.length}
               </span>
             </h2>
-            <button
-              type="button"
-              aria-expanded={listOpen}
-              aria-controls="fleet-list-content"
-              onClick={() => setListOverride(!listOpen)}
-              aria-label={listOpen ? "ซ่อนรายการรถ" : "เปิดรายการรถ"}
-              title={listOpen ? "ซ่อนรายการรถ" : "เปิดรายการรถ"}
-              className={`${control} size-9 min-h-9 px-0`}
-            >
-              {listOpen ? (
-                <Icon name="close" size={16} />
-              ) : (
-                <span className="-rotate-90 lg:rotate-90">
-                  <Icon name="chevron" size={16} />
-                </span>
-              )}
-            </button>
+            {panelHandle("list", "ย้ายแผงรายการรถ", listOpen)}
+            <MapPanelCollapse panelName="รายการรถ" controls="fleet-list-content" expanded={listOpen} onToggle={() => setListOverride(!listOpen)} />
           </div>
 
           <div
@@ -878,9 +946,22 @@ export default function FleetDashboard() {
         <VehicleDetails
           vehicle={selectedVehicle}
           onClose={() => setSelectedId(null)}
+          moveHandle={panelHandle("details", "ย้ายแผงรายละเอียดรถ", detailsExpanded)}
+          active={activePanel === "details"}
+          expanded={detailsExpanded}
+          onToggle={() => setDetailsExpanded(!detailsExpanded)}
         />
       )}
+      {alertsVisible && (
+        <FleetAlertsPanel alerts={alerts} onClose={closeAlerts} onSelect={inspectAlert}
+          moveHandle={panelHandle("alerts", "ย้ายแผงแจ้งเตือน", alertsExpanded)} active={activePanel === "alerts"}
+          listWidth={listOpen ? panelSizes.list?.width : undefined}
+          expanded={alertsExpanded} onToggle={() => setAlertsExpanded(!alertsExpanded)}
+          listLayout={listOpen ? "expanded" : listVisible ? "collapsed" : "hidden"} />
+      )}
       <LayoutMenu
+        toggleRef={layoutToggle}
+        alertsVisible={alertsVisible}
         panels={[
           {
             id: "summary",
@@ -906,6 +987,12 @@ export default function FleetDashboard() {
               setDetailsVisible(!showDetails);
               if (!isDesktop && !showDetails) setListOverride(false);
             },
+          },
+          {
+            id: "alerts",
+            label: "แจ้งเตือน",
+            visible: alertsVisible,
+            toggle: () => setAlertsVisible(!alertsVisible),
           },
         ]}
       />

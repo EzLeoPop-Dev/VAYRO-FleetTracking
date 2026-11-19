@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { getDemoFleet, type VehicleStatus } from "./fleet-demo";
+import { getDemoFleet, type VehicleStatus } from "../_data/fleet-demo";
 
 export const demoFleet = getDemoFleet(0, 0);
 

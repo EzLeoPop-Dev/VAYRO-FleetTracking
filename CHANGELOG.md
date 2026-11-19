@@ -2,6 +2,14 @@
 
 Feature versions are cumulative Git tags on the vayro-frontend branch. Dates use Asia/Bangkok. Older versions v0.1.0-v0.3.0 retain their original tags.
 
+## v0.7.0 - 2026-11-19 - Connected Dashboard and Driver web
+
+- Connect employee login and workspace registration to Gateway/Auth using HttpOnly cookies, session/role guards and logout.
+- Organize Dashboard components/data/maps; add floating Manage sections, movable/resizable panels, vehicle alerts and the animated circular layout menu.
+- Company Admin vehicle forms and Transport job management now use persisted APIs, with address search and saved road previews.
+- Connect Driver home, assigned/completed jobs and history to Transport: accept, start, report problems, resume and slide/keyboard-confirm completion.
+- Preserve the DESIGN.md visual system, full-screen road map and draggable details sheet. The tracking map/overview and employee invitation form remain demos; live GPS and APK delivery remain pending.
+
 ## v0.6.0 - 2026-11-19 - Transport lifecycle API
 
 - Create, edit, assign, accept, start, complete, report problems, resume and cancel jobs, with own-job reads for Drivers.

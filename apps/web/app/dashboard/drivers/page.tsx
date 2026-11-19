@@ -1,4 +1,4 @@
-import { AdminPage, FleetDirectory } from "../admin-directory";
+import { AdminPage, FleetDirectory } from "../_components/admin-directory";
 
 export const metadata = { title: "คนขับ | VAYRO" };
 

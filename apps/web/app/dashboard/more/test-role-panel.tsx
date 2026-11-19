@@ -1,6 +1,6 @@
 "use client";
 
-import { demoRoleLabels, useDemoRole } from "./admin-shell";
+import { demoRoleLabels, useDemoRole } from "../_components/admin-shell";
 
 const choices = [
   { role: "dispatch", description: "ติดตามรถบนแผนที่และดูงานขนส่ง" },
@@ -11,7 +11,8 @@ const choices = [
 ] as const;
 
 export default function TestRolePanel() {
-  const { role, selectRole } = useDemoRole();
+  const { role, canPreview, selectRole } = useDemoRole();
+  if (!canPreview) return null;
 
   return (
     <section
@@ -39,7 +40,6 @@ export default function TestRolePanel() {
               aria-label={demoRoleLabels[option]}
               aria-describedby={`test-role-${option}`}
               aria-pressed={active}
-              disabled={role === null}
               onClick={() => selectRole(option)}
               className={`flex items-start justify-between gap-2 rounded-xl border px-3.5 py-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--fleet-focus)] disabled:opacity-60 ${active ? "soft-inset border-[var(--fleet-accent)] bg-[var(--fleet-selected)]" : "soft-control border-[var(--fleet-line)] bg-[var(--fleet-surface)] hover:bg-[var(--fleet-quiet)]"}`}
             >

@@ -29,9 +29,11 @@ type Drag = {
 export default function DashboardWindow({
   title,
   children,
+  size = "default",
 }: {
   title: string;
   children: ReactNode;
+  size?: "default" | "large";
 }) {
   const router = useRouter();
   const { minimized, minimize, focusLauncher } = useDashboardWindow();
@@ -41,6 +43,9 @@ export default function DashboardWindow({
   const panel = useRef<HTMLElement>(null);
   const position = useRef({ x: 0, y: 0 });
   const drag = useRef<Drag | null>(null);
+  const dimensions = size === "large"
+    ? expanded ? "h-[min(100%,54rem)] w-[min(100%,82rem)]" : "h-[min(100%,46rem)] w-[min(100%,68rem)]"
+    : expanded ? "h-[min(100%,44rem)] w-[min(100%,65rem)]" : "h-[min(100%,34rem)] w-[min(100%,48rem)]";
 
   useEffect(() => {
     if (!minimized) panel.current?.focus({ preventScroll: true });
@@ -122,7 +127,7 @@ export default function DashboardWindow({
             close();
           }
         }}
-        className={`pointer-events-auto flex min-h-0 flex-col overflow-hidden soft-window border border-[var(--fleet-line)] bg-[var(--fleet-surface)] outline-none motion-safe:animate-[panel-enter_220ms_ease-out] ${expanded ? "h-[min(100%,44rem)] w-[min(100%,65rem)]" : "h-[min(100%,34rem)] w-[min(100%,48rem)]"}`}
+        className={`pointer-events-auto flex min-h-0 flex-col overflow-hidden soft-window border border-[var(--fleet-line)] bg-[var(--fleet-surface)] outline-none motion-safe:animate-[panel-enter_220ms_ease-out] ${dimensions}`}
       >
         <header className="relative shrink-0 border-b border-[var(--fleet-line)] bg-[var(--fleet-surface)]">
           <div

@@ -3,7 +3,7 @@ import {
   AmbientLight, BoxGeometry, Camera, CylinderGeometry, DirectionalLight, Group,
   Matrix4, Mesh, MeshLambertMaterial, Scene, WebGLRenderer,
 } from "three";
-import { DEMO_CENTER, type FleetVehicle, type VehicleCategory } from "./fleet-demo";
+import { DEMO_CENTER, type FleetVehicle, type VehicleCategory } from "../_data/fleet-demo";
 
 type Dimensions = [width: number, length: number, height: number];
 type Point = [x: number, y: number, z: number];

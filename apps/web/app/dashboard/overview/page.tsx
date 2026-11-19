@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { demoFleet, directorySurface, statusLabels } from "../admin-directory";
-import DashboardWindow from "../dashboard-window";
+import { demoFleet, directorySurface, statusLabels } from "../_components/admin-directory";
+import DashboardWindow from "../_components/dashboard-window";
 import {
   vehicleCategoryLabels,
   type VehicleCategory,
   type VehicleStatus,
   type VehicleUsage,
-} from "../fleet-demo";
+} from "../_data/fleet-demo";
 
 export const metadata = { title: "ภาพรวม | VAYRO" };
 

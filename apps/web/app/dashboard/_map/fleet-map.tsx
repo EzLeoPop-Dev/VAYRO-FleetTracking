@@ -6,7 +6,7 @@ import type {
   Map as MapLibreMap,
   Marker as MapLibreMarker,
 } from "maplibre-gl";
-import { DEMO_CENTER, type FleetVehicle } from "./fleet-demo";
+import { DEMO_CENTER, type FleetVehicle } from "../_data/fleet-demo";
 import FleetMapSchematic, { vehicleColors } from "./fleet-map-schematic";
 
 type OverlayInsets = {

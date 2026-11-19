@@ -28,39 +28,50 @@
 
 ## 3. โครงสร้างและสถานะปัจจุบัน
 
-The project brief (PDF page 7, "Modular Monolith แยก 12 Service Modules") defines **12 service modules**, listed with their endpoints on PDF pages 18-26. All 12 now exist as folders under `services/`. Each service that owns data has its own database (one Postgres server, one database and login role per service) and is managed with Prisma. Services never read each other's tables: they call each other's `/internal/*` API with `INTERNAL_API_TOKEN`. Field names, ids and the 14-table Data Dictionary contract are unchanged. Ownership and migration steps are in [DATABASE.md](DATABASE.md).
+The project brief (PDF page 7, "Modular Monolith แยก 12 Service Modules") defines **12 service modules**, listed with their endpoints on PDF pages 18-26. All 12 exist as folders under `services/`. The user-requested `navigation-service` extends them with stateless address search and road-route preview, for **13 services in total**. Each service that owns data has its own database (one Postgres server, one database and login role per service) and is managed with Prisma. Services never read each other's tables: they call each other's `/internal/*` API with `INTERNAL_API_TOKEN`. Field names, ids and the 14-table Data Dictionary contract are unchanged. Ownership and migration steps are in [DATABASE.md](DATABASE.md).
 
 | # | Service folder | Database | Tables it owns | Status |
 | --- | --- | --- | --- | --- |
 | 1 | `auth-service` | `auth_db` | `auth_sessions` | done (4 endpoints) |
 | 2 | `company-service` | `company_db` | `company` | `POST /companies/register` + internal lookup; rest of the list is to do |
 | 3 | `user-service` | `user_db` | `users` | done (8 endpoints) |
-| 4 | `vehicle-service` | `vehicle_db` | `vehicle_types`, `vehicles` | data only; internal lookup, public API to do |
+| 4 | `vehicle-service` | `vehicle_db` | `vehicle_types`, `vehicles` | 11 public vehicle/type endpoints, tenant-scoped driver validation and internal lookup |
 | 5 | `gps-device-service` | `gps_device_db` | `gps_devices` | done (6 endpoints, encrypted provider credentials) |
 | 6 | `gps-data-service` | `gps_data_db` | `gps_locations` | done (3 endpoints, abnormal/missing-data detection, event push) |
 | 7 | `tracking-service` | none | none | empty skeleton |
 | 8 | `route-history-service` | none | none | empty skeleton |
-| 9 | `transport-service` | `transport_db` | `transport_jobs` | data only; internal lookup, public API to do |
+| 9 | `transport-service` | `transport_db` | `transport_jobs` | job CRUD, assignment and Driver lifecycle; internal lookup |
 | 10 | `alert-service` (Alert & Geofence) | `alert_db` | `alert_rules`, `geofences`, `alerts` | data only; skeleton |
 | 11 | `reporting-service` | none | none | empty skeleton |
 | 12 | `integration-service` (Integration & Logging) | `integration_db` | `api_integrations`, `api_request_logs`, `system_log` | data only; skeleton |
+| 13 | `navigation-service` | none | none | authenticated Photon address search and Valhalla automobile route preview |
 
 Every service has a `README.md` with its PDF endpoint checklist, the internal API it offers, and the data it must ask other services for. Skeletons already boot, answer the Docker health check, and have `src/plugins/guard.ts` ready for protected routes.
 
 ```text
 apps/web/                            # Next.js, หน้า auth และ Dashboard จำลอง
+apps/web/app/driver/                 # เว็บต้นแบบหน้าแรก งาน และประวัติสำหรับ Driver
 apps/web/app/dashboard/              # แผนที่ ภาพรวม รถ คนขับ งาน และเมนูเพิ่มเติม
-gateway/                             # routes public paths to the 12 services (route table); never proxies /internal/*
-services/*-service/                  # the 12 modules above
+├── _components/     # โครง Dashboard กรอบหน้าต่าง และรายการที่ใช้ร่วมกัน
+├── _data/           # ข้อมูลรถ เส้นทาง และแจ้งเตือนจำลอง
+├── _map/            # แผงติดตาม แจ้งเตือน แผนที่ และโมเดลรถ 3D
+├── drivers/         # รายชื่อคนขับ
+├── jobs/            # งานขนส่ง
+├── manage/          # หน้าต่างเพิ่มรถ เชิญพนักงานทดลอง และงานขนส่งจริง
+├── more/            # เมนูเพิ่มเติมและ TestRole
+├── overview/        # ภาพรวมการขนส่ง
+└── vehicles/        # หน้าต่างรายการรถ
+gateway/                             # routes public paths to the 13 services (route table); never proxies /internal/*
+services/*-service/                  # the original 12 modules plus Navigation preview
 packages/service-kit/                # shared plumbing: ApiError/ok/http plugin, ids, internal-call client, audit helper, auth guard factory
-packages/shared-types/               # shared Auth/User/GPS request/response types
+packages/shared-types/               # shared Auth/User/GPS/Navigation request/response types
 infra/database/init/                 # creates one database + role per service on a new volume
 infra/database/split-legacy.sh       # one-time copy from the old shared database
 infra/database/legacy/               # old shared-schema SQL, reference only
 docs/data-dictionary.json            # machine-readable 14-table field contract
 docs/API_DATA_CONTRACT.md            # Canonical fields and API representation
 docs/DATABASE.md                     # database ownership, Prisma workflow, migration from the shared database
-compose.yaml                         # PostgreSQL + the 12 services + gateway + optional Web
+compose.yaml                         # PostgreSQL + the 13 services + gateway + optional Web
 ```
 
 Every service with a database has `prisma/schema.prisma`, `prisma/migrations/` and `prisma.config.ts`; the generated client lives in `src/generated/` (not committed).
@@ -85,15 +96,31 @@ Rule of thumb: routes only parse HTTP and call a service/use case; services/use 
 gps-data-service serves the three endpoints the PDF lists for service 6: `POST /api/v1/gps/ingest`, `GET /api/v1/gps/vehicles/:vehicleId/latest` and `/locations`. Services 7 (`/api/v1/tracking/*`: every vehicle's latest position with filters) and 8 (`/api/v1/routes/*`: route points and summary) are different endpoints; they are to read gps-data-service's `/internal/locations*`.
 
 All functions the PDF lists for services 1, 3, 5 and 6 are implemented. gps-data-service pushes new points only to services named in `GPS_EVENT_SUBSCRIBERS`; no service receives them yet (Alert & Geofence will).
-Root dev scripts exist for all 12 services. See the shared contract before writing new APIs; do not invent alternate field spellings. IDs are BIGINT strings; timestamps are UTC ISO 8601; GPS values use speed_kmh, direction_degree, accuracy_meters and gps_location_id.
+Root dev scripts exist for all 13 services. See the shared contract before writing new APIs; do not invent alternate field spellings. IDs are BIGINT strings; timestamps are UTC ISO 8601; GPS values use speed_kmh, direction_degree, accuracy_meters and gps_location_id.
+
+`navigation-service` adds `GET /api/v1/navigation/search?q=` and `POST /api/v1/navigation/route`, authenticated through auth-service for company users. It calls configurable Photon/Valhalla providers, returns search coordinates and GeoJSON road geometry with maneuvers, and holds only bounded five-minute company-scoped caches. Its `auto` profile and approximate travel times are road previews. Transport stores the selected road preview with the job; live GPS remains separate integration work. Provider limits and errors are documented in [its README](../services/navigation-service/README.md).
 
 ### สถานะหน้าเว็บ
 
-- `/` เปิด `/dashboard` ซึ่งแสดงรถและเส้นทางจำลองสำหรับ Manager และ Dispatcher เดโมนี้สร้างพิกัดในเบราว์เซอร์ เส้นทางไม่ได้มาจากบริการคำนวณเส้นทาง และไม่มีการใช้ข้อมูลบริษัทจริง
-- Bottom Bar ของ Dashboard เปิดหน้าต่างจัดการรถเหนือแผนที่ที่ `/dashboard/vehicles` และเชื่อมไปยังหน้าคนขับ งาน และเพิ่มเติม หน้าต่างรถค้นหาและกรองรายการได้ หน้ารถและคนขับเป็นรายการอ่านอย่างเดียวจากข้อมูลจำลอง หน้างานแสดงสถานะว่าง
-- TestRole ในหน้าเพิ่มเติมสลับมุมมองจำลอง Dispatch และ Company Admin โดยเก็บตัวเลือกใน `sessionStorage` ของแท็บ มุมมอง Dispatch ใช้แผนที่และงาน ส่วนมุมมอง Admin เพิ่มหน้าภาพรวม รถ และคนขับ การแสดงเมนูและหน้าเป็นพฤติกรรมของเดโมเท่านั้น สิทธิ์ใช้งานจริงต้องตรวจที่ API
-- `/dashboard/overview` เปิดเป็นหน้าต่างลอยเหนือแผนที่และใช้กรอบหน้าต่างร่วมกับหน้าจัดการรถ สรุปจำนวนพนักงานขับรถและรถตามประเภทจากข้อมูลจำลอง สถานะปฏิบัติงาน พร้อมใช้งาน และไม่ได้ใช้งานมาจากสถานะการจัดรถในเดโม ส่วนสถานะกำลังวิ่ง จอด และขาดสัญญาณมาจากข้อมูล GPS จำลอง
 
+- `/` เปิด `/dashboard` ซึ่งตรวจ session กับ Gateway และพาไป `/login` หากยังไม่ได้เข้าสู่ระบบ รถและเส้นทางบนแผนที่เป็นข้อมูลจำลองที่สร้างในเบราว์เซอร์
+- `/login` รองรับ Company Admin, Dispatcher และ Driver ใน Workspace ที่เปิดใช้งาน โดยสองบทบาทแรกเข้า `/dashboard` ส่วน Driver เข้า `/driver` ซึ่งตรวจ Session/Role ผ่าน Gateway แสดงชื่อ อีเมล และรหัส Workspace จากบัญชีจริง พร้อมปุ่มออกจากระบบ ผู้ที่ยังไม่ Login จะกลับไปหน้า Login และ Driver ที่เปิด Dashboard จะถูกพาไปหน้าคนขับ
+- ธีม Driver ใช้สีและพื้นผิวจาก `DESIGN.md` และมีลายแผนผังเส้นทางตกแต่งการ์ดโปรไฟล์ บนจอกว้างงานวันนี้และแจ้งเตือนอยู่ข้างกัน บนมือถือเรียงลงมาในคอลัมน์เดียว
+- เมนูล่าง Driver มีหน้าแรก งาน ประวัติ และ **ออกจากระบบ** เมนูเดียวกันอยู่ในแผงรายละเอียดแผนที่เมื่อกางขึ้น ปุ่มออกจากระบบป้องกันการกดซ้ำระหว่างส่งคำขอ เรียก Auth ผ่าน Gateway เพิกถอน Session ล้าง Cookie แล้วกลับ `/login`
+- Bottom Bar ของ Dashboard เปิดหน้าต่างจัดการรถเหนือแผนที่ที่ `/dashboard/vehicles` ซึ่งโหลดรายการรถจริงผ่าน Gateway ค้นหาหรือกรองประเภท/สถานะได้ และเปิดฟอร์มแก้ไขรหัสรถ ทะเบียน ประเภท สถานะการใช้งาน และคนขับประจำรถได้ Company Admin มีสิทธิ์แก้ไขข้อมูลของบริษัทตัวเอง หน้าคนขับใน Dashboard ยังเป็นรายการตัวอย่าง และหน้างานแสดงรายการงานจริงจาก Transport
+- Company Admin เปิดหน้าต่าง Manage ที่ `/dashboard/manage` จาก Bottom Bar เมนูเพิ่มรถบันทึกผ่าน Next.js `/api/fleet/*` → Gateway → vehicle-service ลง `vehicle_db` รองรับเพิ่มประเภทรถและเลือกบัญชี Driver จริงในบริษัท รถสร้างได้โดยยังไม่ตั้งค่า GPS สถานะที่แสดงเป็น active/inactive/maintenance และข้อมูลรถยังอยู่เมื่อรีเฟรช
+- ข้อมูลรายการรถ ประเภทรถ และคนขับใน Dashboard ใช้ `FleetVehiclesProvider` ร่วมกัน แสดงสถานะโหลด/ผิดพลาดและโหลดใหม่ได้ รายการแบ่งหน้าเมื่อเรียก API เพื่อรองรับมากกว่า 100 รายการ ฟอร์มแก้ไขส่งเฉพาะฟิลด์ที่เปลี่ยน และ Backend ตรวจบริษัทของประเภท/คนขับ พร้อมบันทึก audit ใน transaction
+- เมนู **เพิ่มคน** บันทึกคำเชิญทดลองจากอีเมล ชื่อ (ไม่บังคับ) และบทบาทใน Workspace พร้อมตรวจอีเมลซ้ำ รายการอยู่ในหน้าต่าง Manage จนกว่าจะปิดหรือรีเฟรช โดยไม่มีการสร้างบัญชีหรือส่งอีเมล
+- Company Admin ใช้ TestRole ในหน้าเพิ่มเติมเพื่อสลับมุมมองจำลอง Dispatch และ Admin โดยเก็บตัวเลือกใน `sessionStorage` ของแท็บ มุมมอง Dispatch ใช้แผนที่และงาน ส่วนมุมมอง Admin เพิ่มหน้าภาพรวม รถ และคนขับ บทบาทจริงของบัญชีมาจาก Gateway
+- `/dashboard/overview` เปิดเป็นหน้าต่างลอยเหนือแผนที่และใช้กรอบหน้าต่างร่วมกับหน้าจัดการรถ สรุปจำนวนพนักงานขับรถและรถตามประเภทจากข้อมูลจำลอง สถานะปฏิบัติงาน พร้อมใช้งาน และไม่ได้ใช้งานมาจากสถานะการจัดรถในเดโม ส่วนสถานะกำลังวิ่ง จอด และขาดสัญญาณมาจากข้อมูล GPS จำลอง
+- แผงแจ้งเตือนในเมนูจัดหน้าจอแสดงความเร็วที่เกินหรือต่ำกว่าเกณฑ์เดโมและรถที่ขาดสัญญาณ ส่วนเหตุออกนอกเส้นทางและรายงานรถเสียเป็นเหตุการณ์ตัวอย่าง รายการแต่ละรายการเปิดรถคันนั้นบนแผนที่ได้
+
+- `/driver` โหลดงานของบัญชีที่เข้าสู่ระบบจาก `/api/transport/driver/jobs` → Gateway → Transport โดย Backend จำกัด Driver และบริษัท แสดงงานวันนี้ตามเวลาไทย งานที่รับอยู่ รายการงานเปิด และประวัติงานจบ/ยกเลิก สถานะและเวลาเก็บใน PostgreSQL และยังอยู่หลังรีเฟรช
+- Company Admin ใช้ **Manage → จัดการงาน** สร้าง/แก้ไขรหัสงาน ชื่องาน สินค้า จุดรับ–ส่ง เวลานัดรับ และเลือกบัญชี Driver/รถที่ใช้งานได้ในบริษัท เลือกครบแล้วงานเป็น `assigned` และปรากฏฝั่ง Driver สามารถบันทึก `pending` ไว้ก่อน แก้ไข/มอบหมายได้ก่อน Driver รับงาน และยกเลิกงานที่ยังไม่จบได้
+- Transport รองรับ `pending → assigned → accepted → in_progress → completed` และ `accepted/in_progress → problem → in_progress`; การกลับมาทำงานต่อเก็บเวลาเริ่มเดิม ตรวจสิทธิ์ที่ API ทุกครั้ง พร้อม transaction audit และล็อกไม่ให้ Driver หรือรถมีหลายงานที่กำลังรับ/ทำ/แจ้งปัญหาพร้อมกัน Backend รองรับ Company Admin/Dispatcher ส่วน UI Manage ปัจจุบันเปิดให้ Company Admin; Dispatcher ดูรายการงานจาก Bottom Bar ได้
+- ค้นหาจุดรับ–ส่งผ่าน Photon และคำนวณเส้นทางถนน Valhalla โปรไฟล์รถยนต์ `auto` เก็บพิกัดและ route snapshot กับงานจริงใน `transport_db` หน้า Driver เปิดเส้นทางบน MapLibre/OpenFreeMap เต็มจอ มีแถบด้านบนและแผงปัดขึ้นเพื่อดูใบงาน เริ่มงาน แจ้งปัญหา ทำงานต่อ และเลื่อนเพื่อจบงาน (มีการยืนยันผ่านคีย์บอร์ดได้) คำสั่งเลี้ยวเป็นภาษาจากผู้ให้บริการ
+- รอบนี้ยังไม่อ่าน GPS หรือจำลองรถวิ่งอัตโนมัติ Driver เลือกดูขั้นตอนเส้นทางเองและจบงานด้วยตนเอง ปุ่มจบงานไม่ใช้เงื่อนไขระยะใกล้ปลายทาง รูปภาพรถยังไม่มีใน schema จึงแสดงสัญลักษณ์พร้อมทะเบียนและประเภทจริง เส้นทาง/เวลาเป็นข้อมูลประมาณการถนน ไม่รองรับข้อจำกัดรถบรรทุกโดยเฉพาะ
+- `TransportJobsProvider` โหลดงานเมื่อเข้าหน้า โหลดใหม่เมื่อกลับแท็บ/ออนไลน์ และตรวจทุก 15 วินาทีขณะมองเห็นแท็บ ป้องกันข้อมูล poll เก่าทับ mutation แสดงโหลด/ไม่มีข้อมูล/ผิดพลาด และไม่ retry การเขียนข้อมูลอัตโนมัติ
 ## 4. โครงสร้างเป้าหมายที่แนะนำ
 
 นี่คือแนวทางการจัดวางโค้ดเมื่อเริ่มเพิ่มความสามารถ ไม่ใช่รายการไฟล์ที่มีอยู่แล้ว และสามารถปรับให้เข้ากับ implementation จริงได้
