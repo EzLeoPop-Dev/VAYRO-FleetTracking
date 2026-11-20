@@ -1,0 +1,2243 @@
+{
+  "info": {
+    "name": "VAYRO Services 8, 9, 10, 12 (Route History, Transport Job, Alert & Geofence, Integration & Logging)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Import with local.postman_environment.json. Run 00 Setup first, then 09, 10, 08, 12. Local test database only; no real credentials are included."
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "00 Setup",
+      "item": [
+        {
+          "name": "00.1 Login Company Admin (also Dispatcher tests)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{login_email}}\",\n  \"password\": \"{{login_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "if (pm.response.code === 200) { const d = pm.response.json().data; pm.environment.set('access_token', d.access_token); pm.environment.set('refresh_token', d.refresh_token); pm.environment.set('company_id', d.user.company_id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "00.2 Login Driver",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/login",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{driver_email}}\",\n  \"password\": \"{{driver_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "The driver must be an active user with role driver in the same company as the Company Admin. driver_user_id is filled in from the login."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "if (pm.response.code === 200) { const d = pm.response.json().data; pm.environment.set('driver_access_token', d.access_token); pm.environment.set('driver_user_id', d.user.user_id); }"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Log in first. Needs login_email / login_password (Company Admin), driver_email / driver_password, and vehicle_id of an ACTIVE vehicle of that company."
+    },
+    {
+      "name": "09 Transport Job",
+      "item": [
+        {
+          "name": "09.01 Create job (pending)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/jobs",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_code\": \"PM-{{$timestamp}}\",\n  \"job_name\": \"Postman test job\",\n  \"pickup_address\": \"Warehouse A, Bangkok\",\n  \"pickup_latitude\": 13.7563,\n  \"pickup_longitude\": 100.5018,\n  \"delivery_address\": \"Customer B, Nonthaburi\",\n  \"delivery_latitude\": 13.8621,\n  \"delivery_longitude\": 100.5144\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.expect(pm.response.code === 201).to.be.true);",
+                  "if (pm.response.code < 300) { pm.environment.set('job_id', pm.response.json().data.job_id); }",
+                  "pm.test('Starts pending without vehicle/driver', () => pm.expect(pm.response.json().data.job_status).to.eql('pending'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.02 Create with only a vehicle must fail",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/jobs",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_code\": \"PM-BAD-{{$timestamp}}\",\n  \"job_name\": \"Postman test job\",\n  \"pickup_address\": \"Warehouse A, Bangkok\",\n  \"pickup_latitude\": 13.7563,\n  \"pickup_longitude\": 100.5018,\n  \"delivery_address\": \"Customer B, Nonthaburi\",\n  \"delivery_latitude\": 13.8621,\n  \"delivery_longitude\": 100.5144,\n  \"vehicle_id\": \"{{vehicle_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.expect(pm.response.code === 422).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.03 Unknown field company_id must be refused",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/jobs",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_code\": \"PM-BAD2-{{$timestamp}}\",\n  \"job_name\": \"Postman test job\",\n  \"pickup_address\": \"Warehouse A, Bangkok\",\n  \"pickup_latitude\": 13.7563,\n  \"pickup_longitude\": 100.5018,\n  \"delivery_address\": \"Customer B, Nonthaburi\",\n  \"delivery_latitude\": 13.8621,\n  \"delivery_longitude\": 100.5144,\n  \"company_id\": \"1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.expect(pm.response.code === 422).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.04 Schedule end before start must fail",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/jobs",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_code\": \"PM-BAD3-{{$timestamp}}\",\n  \"job_name\": \"Postman test job\",\n  \"pickup_address\": \"Warehouse A, Bangkok\",\n  \"pickup_latitude\": 13.7563,\n  \"pickup_longitude\": 100.5018,\n  \"delivery_address\": \"Customer B, Nonthaburi\",\n  \"delivery_latitude\": 13.8621,\n  \"delivery_longitude\": 100.5144,\n  \"scheduled_start_at\": \"2026-11-19T10:00:00Z\",\n  \"scheduled_end_at\": \"2026-11-19T09:00:00Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.expect(pm.response.code === 422).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.05 Duplicate job_code must fail",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/jobs",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_code\": \"PM-DUP\",\n  \"job_name\": \"dup\",\n  \"pickup_address\": \"Warehouse A, Bangkok\",\n  \"pickup_latitude\": 13.7563,\n  \"pickup_longitude\": 100.5018,\n  \"delivery_address\": \"Customer B, Nonthaburi\",\n  \"delivery_latitude\": 13.8621,\n  \"delivery_longitude\": 100.5144\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Send twice: the second time must be 409 JOB_CODE_EXISTS."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 first time, 409 afterwards', () => pm.expect([201, 409]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.06 List jobs",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/jobs?status=pending&limit=20",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('Has meta.total', () => pm.expect(pm.response.json().meta.total).to.be.a('number'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.07 Get job",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/jobs/{{job_id}}",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.08 Update job",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/jobs/{{job_id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_name\": \"Postman test job (edited)\",\n  \"pickup_address\": \"Warehouse A, Bangkok\",\n  \"delivery_address\": \"Customer B, Nonthaburi\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.09 Start before assigning must fail",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/jobs/{{job_id}}/start",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.expect(pm.response.code === 409).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.10 Assign vehicle and driver",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/jobs/{{job_id}}/assign",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicle_id\": \"{{vehicle_id}}\",\n  \"driver_id\": \"{{driver_user_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "warnings may contain vehicle_current_driver_differs: set vehicles.current_driver_id to the driver (SQL) before sending phone GPS."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('Assigned', () => pm.expect(pm.response.json().data.job_status).to.eql('assigned'));",
+                  "console.log('warnings:', JSON.stringify(pm.response.json().data.warnings));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.11 Driver: my jobs",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/driver/jobs",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.12 Driver: sees the assigned job",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/jobs/{{job_id}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.13 Driver cannot create a job",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/jobs",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_code\": \"PM-DRV-{{$timestamp}}\",\n  \"job_name\": \"Postman test job\",\n  \"pickup_address\": \"Warehouse A, Bangkok\",\n  \"pickup_latitude\": 13.7563,\n  \"pickup_longitude\": 100.5018,\n  \"delivery_address\": \"Customer B, Nonthaburi\",\n  \"delivery_latitude\": 13.8621,\n  \"delivery_longitude\": 100.5144\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.expect(pm.response.code === 403).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.14 Driver starts the job",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/jobs/{{job_id}}/start",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "From now on the driver's phone may send GPS to /gps/ingest. 409 DRIVER_BUSY / VEHICLE_BUSY means another job is already in progress."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('in_progress', () => pm.expect(pm.response.json().data.job_status).to.eql('in_progress'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.15 Starting again must fail",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/jobs/{{job_id}}/start",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.expect(pm.response.code === 409).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.16 Re-assign while in progress must fail",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/jobs/{{job_id}}/assign",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vehicle_id\": \"{{vehicle_id}}\",\n  \"driver_id\": \"{{driver_user_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.expect(pm.response.code === 409).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.17 Driver reports a problem",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/jobs/{{job_id}}/problem",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"problem_note\": \"Flat tire near the highway entrance\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Raises a system_anomaly alert for the dispatchers (see 10 Alerts)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('problem', () => pm.expect(pm.response.json().data.job_status).to.eql('problem'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.18 Driver resumes (start from problem)",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/jobs/{{job_id}}/start",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.19 Driver completes",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/jobs/{{job_id}}/complete",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('completed with an end time', () => { const j = pm.response.json().data; pm.expect(j.job_status).to.eql('completed'); pm.expect(j.actual_end_at).to.be.a('string'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.20 Completing again must fail",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/jobs/{{job_id}}/complete",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.expect(pm.response.code === 409).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.21 Completed job cannot be edited",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/jobs/{{job_id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pickup_address\": \"x\",\n  \"delivery_address\": \"y\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.expect(pm.response.code === 409).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.22 Create a second job to cancel",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/jobs",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"job_code\": \"PM-C-{{$timestamp}}\",\n  \"job_name\": \"Postman test job\",\n  \"pickup_address\": \"Warehouse A, Bangkok\",\n  \"pickup_latitude\": 13.7563,\n  \"pickup_longitude\": 100.5018,\n  \"delivery_address\": \"Customer B, Nonthaburi\",\n  \"delivery_latitude\": 13.8621,\n  \"delivery_longitude\": 100.5144\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.expect(pm.response.code === 201).to.be.true);",
+                  "if (pm.response.code < 300) { pm.environment.set('cancel_job_id', pm.response.json().data.job_id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.23 Dispatcher cancels it",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/jobs/{{cancel_job_id}}/cancel",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Customer cancelled\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('cancelled', () => pm.expect(pm.response.json().data.job_status).to.eql('cancelled'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.24 Driver cannot cancel",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/jobs/{{cancel_job_id}}/cancel",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.expect(pm.response.code === 403).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "09.25 Unknown job",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/jobs/999999999999",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.expect(pm.response.code === 404).to.be.true);"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Needs vehicle_id (active vehicle of the company) and the driver from 00.2. Run in order."
+    },
+    {
+      "name": "10 Alert and Geofence",
+      "item": [
+        {
+          "name": "10.01 Create overspeed rule (90 km/h)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/alert-rules",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rule_type\": \"overspeed\",\n  \"threshold_value\": 90\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201, or 409 if the company already has one', () => pm.expect([201, 409]).to.include(pm.response.code));",
+                  "if (pm.response.code < 300) { pm.environment.set('overspeed_rule_id', pm.response.json().data.alert_rule_id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.02 Create GPS offline rule (5 min)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/alert-rules",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rule_type\": \"gps_offline\",\n  \"threshold_value\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201, or 409 if the company already has one', () => pm.expect([201, 409]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.03 List rules",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/alert-rules",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "const rule = pm.response.json().data.find(r => r.rule_type === 'overspeed'); if (rule) pm.environment.set('overspeed_rule_id', rule.alert_rule_id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.04 Threshold out of range must fail",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/alert-rules",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rule_type\": \"overspeed\",\n  \"threshold_value\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.expect(pm.response.code === 422).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.05 Update overspeed threshold (100)",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/alert-rules/{{overspeed_rule_id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"threshold_value\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.06 Disable rule",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/alert-rules/{{overspeed_rule_id}}/status",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_enabled\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.07 Enable rule",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/alert-rules/{{overspeed_rule_id}}/status",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_enabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.08 Driver cannot read rules",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/alert-rules",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.expect(pm.response.code === 403).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.09 Create geofence (circle around central Bangkok)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/geofences",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"geofence_name\": \"Postman test area\",\n  \"center_latitude\": 13.7563,\n  \"center_longitude\": 100.5018,\n  \"radius_meters\": 500\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.expect(pm.response.code === 201).to.be.true);",
+                  "if (pm.response.code < 300) { pm.environment.set('geofence_id', pm.response.json().data.geofence_id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.10 Radius 0 must fail",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/geofences",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"geofence_name\": \"bad\",\n  \"center_latitude\": 13.7,\n  \"center_longitude\": 100.5,\n  \"radius_meters\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.expect(pm.response.code === 422).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.11 List geofences",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/geofences",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.12 Update geofence",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/geofences/{{geofence_id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"geofence_name\": \"Postman test area (edited)\",\n  \"center_latitude\": 13.7563,\n  \"center_longitude\": 100.5018,\n  \"radius_meters\": 800,\n  \"notify_exit\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.13 Deactivate geofence",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/geofences/{{geofence_id}}/status",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"geofence_status\": \"inactive\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.14 Activate geofence",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/geofences/{{geofence_id}}/status",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"geofence_status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.15 List alerts (newest first)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/alerts?limit=20",
+            "header": [],
+            "description": "Alerts appear after: a job is assigned (job_assignment), a problem is reported (system_anomaly), or GPS points trigger a rule. Needs GPS_EVENT_SUBSCRIBERS in .env for the GPS ones."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "const rows = pm.response.json().data; if (rows.length) pm.environment.set('alert_id', rows[0].alert_id); else console.log('No alerts yet: run the job steps (09.10, 09.17) or send GPS points first.');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.16 Filter alerts by type",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/alerts?alert_type=job_assignment&alert_status=unread",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.17 Driver: only my alerts",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/alerts",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('Only alerts addressed to me', () => pm.response.json().data.every(a => a.recipient_user_id === pm.environment.get('driver_user_id')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.18 Get alert",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/alerts/{{alert_id}}",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 (404 if there is no alert yet)', () => pm.expect([200, 404]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.19 Mark read",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/alerts/{{alert_id}}/read",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 (404 if there is no alert yet)', () => pm.expect([200, 404]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.20 Take for handling",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/alerts/{{alert_id}}/handling",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200, 409 if already handled/resolved, 404 if none', () => pm.expect([200, 404, 409]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.21 Resolve",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/alerts/{{alert_id}}/resolve",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200, 404 if none', () => pm.expect([200, 404]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.22 Resolve again must fail",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/alerts/{{alert_id}}/resolve",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 (404 if there is no alert)', () => pm.expect([404, 409]).to.include(pm.response.code));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.23 Driver cannot resolve",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/alerts/{{alert_id}}/resolve",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.expect(pm.response.code === 403).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.24 Create a geofence to delete",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/geofences",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"geofence_name\": \"Postman delete me\",\n  \"center_latitude\": 14.0,\n  \"center_longitude\": 100.6,\n  \"radius_meters\": 300\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.expect(pm.response.code === 201).to.be.true);",
+                  "if (pm.response.code < 300) { pm.environment.set('temp_geofence_id', pm.response.json().data.geofence_id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.25 Delete it",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/geofences/{{temp_geofence_id}}",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Rules, circular geofences and alerts. Overspeed, geofence and GPS-offline alerts also need GPS points flowing (see README)."
+    },
+    {
+      "name": "08 Route History",
+      "item": [
+        {
+          "name": "08.01 Whole route, last 24 h",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/routes/vehicles/{{vehicle_id}}",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('Has summary and points', () => { const d = pm.response.json().data; pm.expect(d.summary.point_count).to.be.a('number'); pm.expect(d.points).to.be.an('array'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.02 Points, 5 per page",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/routes/vehicles/{{vehicle_id}}/points?limit=5&offset=0",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('At most 5 points', () => pm.expect(pm.response.json().data.length).to.be.at.most(5));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.03 Summary",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/routes/vehicles/{{vehicle_id}}/summary",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('Has distance and gaps', () => { const d = pm.response.json().data; pm.expect(d.distance_km).to.be.a('number'); pm.expect(d.gaps).to.be.an('array'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.04 Explicit range",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/routes/vehicles/{{vehicle_id}}/summary?from=2026-11-18T00:00:00Z&to=2026-11-19T00:00:00Z",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.05 Range longer than 31 days must fail",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/routes/vehicles/{{vehicle_id}}/summary?from=2026-09-01T00:00:00Z&to=2026-11-19T00:00:00Z",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.expect(pm.response.code === 422).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.06 Reversed range must fail",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/routes/vehicles/{{vehicle_id}}/summary?from=2026-11-19T00:00:00Z&to=2026-11-18T00:00:00Z",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.expect(pm.response.code === 422).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.07 Unknown vehicle",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/routes/vehicles/999999999999/summary",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.expect(pm.response.code === 404).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.08 Driver: only my job time",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/routes/vehicles/{{vehicle_id}}",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('Driver gets job windows', () => pm.expect(pm.response.json().meta.windows).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "08.09 No token must fail",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/routes/vehicles/{{vehicle_id}}/summary",
+            "header": [],
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.expect(pm.response.code === 401).to.be.true);"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Needs GPS points stored for vehicle_id (see ../postman/README.md, GPS section). Points are ordered by recorded_at."
+    },
+    {
+      "name": "12 Integration and Logging",
+      "item": [
+        {
+          "name": "12.01 Create integration (API key shown once)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/integrations",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"integration_name\": \"Postman partner\",\n  \"permissions\": [\n    \"vehicles:read\",\n    \"tracking:read\"\n  ],\n  \"rate_limit_per_minute\": 30\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "The key is saved in the environment variable external_api_key (secret). Do not export the environment with it filled in."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.expect(pm.response.code === 201).to.be.true);",
+                  "if (pm.response.code < 300) { pm.environment.set('integration_id', pm.response.json().data.integration_id); }",
+                  "if (pm.response.code < 300) { pm.environment.set('external_api_key', pm.response.json().data.api_key); }",
+                  "pm.test('Key returned once, hash never', () => { const d = pm.response.json().data; pm.expect(d.api_key).to.match(/^vyr_[0-9a-f]{8}\\./); pm.expect(d).to.not.have.property('api_key_hash'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.02 Unknown permission must fail",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/integrations",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"integration_name\": \"bad\",\n  \"permissions\": [\n    \"vehicles:write\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.expect(pm.response.code === 422).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.03 Empty permissions must fail",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/integrations",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"integration_name\": \"bad\",\n  \"permissions\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.expect(pm.response.code === 422).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.04 List integrations (no hash)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/integrations",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('Never shows hash or full key', () => pm.expect(JSON.stringify(pm.response.json().data)).to.not.match(/api_key_hash|\"api_key\"/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.05 Get integration",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/integrations/{{integration_id}}",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.06 Update permissions and rate limit",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/integrations/{{integration_id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permissions\": [\n    \"vehicles:read\",\n    \"routes:read\"\n  ],\n  \"rate_limit_per_minute\": 120\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.07 Disable",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/integrations/{{integration_id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"integration_status\": \"disabled\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.08 Enable again",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/integrations/{{integration_id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"integration_status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.09 Rotate key (old key stops working)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/integrations/{{integration_id}}/rotate-key",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "if (pm.response.code < 300) { pm.environment.set('external_api_key', pm.response.json().data.api_key); }",
+                  "pm.test('New key returned', () => pm.expect(pm.response.json().data.api_key).to.match(/^vyr_/));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.10 Driver cannot list integrations",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/integrations",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{driver_access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.expect(pm.response.code === 403).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.11 Integration request log",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/integration-logs?limit=20",
+            "header": [],
+            "description": "Empty until a gateway or service records external calls through POST /internal/request-logs."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.12 System log (this service + transport + alert)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/system-logs?limit=20",
+            "header": [],
+            "description": "Merges the audit rows of integration-service, transport-service and alert-service. meta.sources shows which of them answered. Other services' logs are not included yet."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('Reports its sources', () => pm.expect(pm.response.json().meta.sources).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.13 System log, job actions only",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/system-logs?action=job.&limit=20",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.14 System log, one source",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/system-logs?source=integration-service&limit=10",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.15 offset + limit over 200 must fail",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/system-logs?offset=150&limit=100",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.expect(pm.response.code === 422).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.16 Revoke",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/integrations/{{integration_id}}/revoke",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.expect(pm.response.code === 200).to.be.true);",
+                  "pm.test('revoked', () => pm.expect(pm.response.json().data.integration_status).to.eql('revoked'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.17 Revoke again must fail",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/integrations/{{integration_id}}/revoke",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.expect(pm.response.code === 409).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.18 Revoked key cannot be edited",
+          "request": {
+            "method": "PUT",
+            "url": "{{base_url}}/integrations/{{integration_id}}",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"integration_name\": \"x\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.expect(pm.response.code === 409).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.19 Revoked key cannot be rotated",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/integrations/{{integration_id}}/rotate-key",
+            "header": []
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.expect(pm.response.code === 409).to.be.true);"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "API keys for external clients. verify and request-logs are internal (not on the gateway): see services/integration-service/README.md."
+    }
+  ]
+}
