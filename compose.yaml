@@ -217,7 +217,7 @@ services:
     restart: unless-stopped
     healthcheck: *healthcheck
 
-  # 8. Route History. No database; skeleton (no routes yet).
+  # 8. Route History. No database: reads stored points from gps-data-service.
   route-history-service:
     build:
       context: .
@@ -229,11 +229,12 @@ services:
       AUTH_SERVICE_URL: http://auth-service:3000
       GPS_DATA_SERVICE_URL: http://gps-data-service:3000
       VEHICLE_SERVICE_URL: http://vehicle-service:3000
+      TRANSPORT_SERVICE_URL: http://transport-service:3000
     init: true
     restart: unless-stopped
     healthcheck: *healthcheck
 
-  # 9. Transport Job. Owns: transport_jobs. Internal lookups only for now (no public API yet).
+  # 9. Transport Job. Owns: transport_jobs.
   transport-service:
     build:
       context: .
@@ -244,6 +245,10 @@ services:
       <<: *internal
       DATABASE_URL: postgres://transport_svc:${DB_PASSWORD_TRANSPORT:?copy .env.example to .env}@postgres:5432/transport_db
       AUTH_SERVICE_URL: http://auth-service:3000
+      VEHICLE_SERVICE_URL: http://vehicle-service:3000
+      USER_SERVICE_URL: http://user-service:3000
+      # Optional: raises "new job" / "job problem" alerts and pauses the offline check when a job ends.
+      ALERT_SERVICE_URL: http://alert-service:3000
     depends_on:
       postgres:
         condition: service_healthy
@@ -251,7 +256,7 @@ services:
     restart: unless-stopped
     healthcheck: *healthcheck
 
-  # 10. Alert & Geofence. Owns: alert_rules, geofences, alerts. Skeleton (no routes yet).
+  # 10. Alert & Geofence. Owns: alert_rules, geofences, alerts (+ its own system_log and vehicle_signal_state).
   alert-service:
     build:
       context: .
@@ -306,6 +311,9 @@ services:
       DATABASE_URL: postgres://integration_svc:${DB_PASSWORD_INTEGRATION:?copy .env.example to .env}@postgres:5432/integration_db
       AUTH_SERVICE_URL: http://auth-service:3000
       COMPANY_SERVICE_URL: http://company-service:3000
+      # GET /api/v1/system-logs also collects the audit rows of these services over their /internal/system-logs.
+      TRANSPORT_SERVICE_URL: http://transport-service:3000
+      ALERT_SERVICE_URL: http://alert-service:3000
     depends_on:
       postgres:
         condition: service_healthy

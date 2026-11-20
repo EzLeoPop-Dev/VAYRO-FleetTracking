@@ -53,3 +53,48 @@ node services/tracking-service/test/e2e.mjs
 ```
 
 คำสั่งนี้สร้างข้อมูลทดสอบและ restart เฉพาะ Tracking Service แล้วตรวจว่าอุปกรณ์/พิกัดยังอยู่ใน PostgreSQL ไม่ลบข้อมูลหลังรัน
+
+
+## Services 8, 9, 10, 12 (Route History, Transport Job, Alert & Geofence, Integration & Logging)
+
+Import `VAYRO.Services.8-9-10-12.postman_collection.json` และ `local.postman_environment.json` (เพิ่มตัวแปร `driver_email`, `driver_password`, `job_id`, `external_api_key` ฯลฯ ให้แล้ว ค่าว่างทั้งหมด) แล้วรัน `00 Setup` ก่อน จากนั้น 09, 10, 08, 12 ตามลำดับ ไฟล์ตัวอย่างไม่มี password หรือ token จริง
+
+### เตรียมก่อนรัน
+
+1. รัน stack ให้ครบ: `docker compose up --build -d --wait` (ต้องเป็นเวอร์ชันที่มี 4 service นี้ และ Postgres เริ่มจากฐานใหม่หรือ migrate แล้ว: alert-service มี migration ใหม่ `20261118000000_audit_log_and_signal_state`)
+2. ถ้าต้องการให้ overspeed / geofence / GPS offline ทำงาน ให้ใส่ใน `.env` แล้ว recreate gps-data-service:
+
+   ```powershell
+   # .env
+   GPS_EVENT_SUBSCRIBERS=http://alert-service:3000
+   docker compose up -d gps-data-service
+   ```
+
+   ถ้าไม่ตั้ง alert จาก GPS จะไม่เกิด (alert จากงานขนส่งยังเกิดตามปกติ)
+3. Company Admin ที่ Workspace เป็น `active` ตั้ง `login_email` / `login_password` ตามชุดเดิม
+4. สร้าง Driver ในบริษัทเดียวกัน (เรียกครั้งเดียวด้วย token ของ Company Admin, ใช้ request `09 Create test employee` ในชุด Authentication แล้วเปลี่ยน `"role"` เป็น `"driver"`) ใส่ email/password ลง `driver_email`, `driver_password`
+5. ต้องมีรถ `active` ของบริษัทนั้นและตั้ง `vehicle_id` ใน environment (Vehicle API ยังไม่มี จึงเตรียมด้วย SQL ได้ ตัวอย่างด้านล่าง เปลี่ยน `123` เป็น `company_id` จริงและ `456` เป็น `user_id` ของ Driver)
+
+   ```powershell
+   docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U vayro -d vehicle_db -c "INSERT INTO vehicles(company_id,vehicle_code,license_plate,current_driver_id) VALUES (123,'PM-001','PM-001',456) RETURNING vehicle_id;"
+   ```
+
+   `current_driver_id` ต้องเป็น Driver คนนั้น ไม่เช่นนั้น `/gps/ingest` จากมือถือจะถูกปฏิเสธ (งานที่ assign จะตอบ `warnings: ["vehicle_current_driver_differs"]`)
+6. เมื่ออยากส่งพิกัดจริงจาก Driver: ต้องมีอุปกรณ์ `driver_mobile_app` ผูกกับรถ (ใน `gps_device_db` ตาราง `gps_devices`) และงาน `in_progress` ซึ่งขั้น 09.14 ทำให้ ส่วนพิกัดใช้ `POST /gps/ingest` ตามชุด GPS เดิม
+
+### ทดสอบเหตุการณ์ GPS (หลังตั้ง `GPS_EVENT_SUBSCRIBERS`)
+
+- **Overspeed:** สร้างกฎ overspeed (10.01) แล้วส่งพิกัดที่ `speed_kmh` เกินเกณฑ์ ได้ alert `overspeed` หนึ่งรายการ ส่งซ้ำภายใน 10 นาทีไม่เกิดรายการใหม่ ตราบที่รายการแรกยังไม่ resolve
+- **Geofence:** สร้างวง (10.09) ส่งพิกัดนอกวง แล้วส่งพิกัดในวง ได้ `geofence_enter` (พิกัดแรกสุดของรถเป็นแค่จุดเริ่ม ไม่เกิด alert)
+- **GPS offline:** สร้างกฎ `gps_offline` 5 นาที ส่งพิกัดหนึ่งจุด แล้วรอเกินเวลา (ตัวตรวจรันทุก 60 วินาที) ได้ alert `gps_offline` หนึ่งรายการต่อการหายหนึ่งครั้ง
+- พิกัดที่ช้า (`freshness = delayed`) หรือผิดปกติ (`null_island`, `impossible_speed`) ไม่ทำให้เกิด overspeed/geofence และไม่เลื่อนตำแหน่งปัจจุบันของรถ
+
+### ส่วนที่ทดสอบผ่าน Postman ไม่ได้
+
+`POST /internal/api-keys/verify` และ `/internal/request-logs` เป็น internal (gateway ไม่ส่งต่อ) ใช้ `x-internal-token` ซึ่งเป็นค่า `INTERNAL_API_TOKEN` ใน `.env` เรียกจากใน container ได้ เช่น (รูปแบบการ quote ต่างกันตาม shell):
+
+```powershell
+docker compose exec -T integration-service bun -e "const r = await fetch('http://localhost:3000/internal/api-keys/verify', {method:'POST', headers:{'content-type':'application/json','x-internal-token':process.env.INTERNAL_API_TOKEN}, body: JSON.stringify({api_key:'<external_api_key>', permission:'vehicles:read'})}); console.log(r.status, await r.text())"
+```
+
+ตอนนี้ยังไม่มีตัวไหนเรียก verify อัตโนมัติ (ดู "Not done yet" ใน `services/integration-service/README.md`)

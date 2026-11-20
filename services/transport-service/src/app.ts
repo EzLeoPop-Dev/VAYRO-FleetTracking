@@ -1,7 +1,11 @@
 import { Elysia } from "elysia";
 import { internalRoutes } from "./modules/internal/internal.routes";
+import { driverRoutes, jobRoutes } from "./modules/jobs/jobs.routes";
+import { systemLogs } from "./system-logs";
 
-// Public transport-job CRUD is not built yet; today this service only answers other services' lookups.
 export const app = new Elysia()
   .get("/", () => ({ service: "transport-service", status: "ok" })) // Docker health check
-  .use(internalRoutes);
+  .use(jobRoutes)
+  .use(driverRoutes)
+  .use(internalRoutes)
+  .use(systemLogs);

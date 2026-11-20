@@ -1,4 +1,5 @@
-// alert-service (Alert & Geofence) owns alert_rules, geofences and alerts. Database: alert_db.
+// alert-service (Alert & Geofence) owns alert_rules, geofences and alerts (plus its own system_log and a small
+// vehicle_signal_state table, see below). Database: alert_db.
 // company_id / vehicle_id / job_id / recipient_user_id / created_by / handled_by point at other services' data:
 // plain values, no foreign keys. Inside this service geofence_id is a real foreign key.
 
@@ -99,4 +100,41 @@ model Alert {
 
   @@index([company_id, alert_status, triggered_at], map: "alerts_company_status_time_idx")
   @@map("alerts")
+}
+
+// Operational state, not a Data Dictionary table: where each vehicle was last heard from, which geofences it is inside,
+// and whether its "GPS offline" alert is already raised. It lets the geofence and offline checks survive a restart.
+// baseline_set stays false until a usable point has been seen, so the first real point never raises a false "entered".
+model VehicleSignalState {
+  vehicle_id          BigInt   @id
+  company_id          BigInt
+  last_recorded_at    DateTime @db.Timestamptz(6)
+  last_received_at    DateTime @db.Timestamptz(6)
+  last_latitude       Decimal  @db.Decimal(10, 7)
+  last_longitude      Decimal  @db.Decimal(10, 7)
+  inside_geofence_ids BigInt[] @default([])
+  baseline_set        Boolean  @default(false)
+  offline_alerted     Boolean  @default(false)
+  updated_at          DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  @@index([company_id, last_received_at], map: "vehicle_signal_state_company_idx")
+  @@map("vehicle_signal_state")
+}
+
+// Audit trail of this service only (rule, geofence and alert changes). Never store secrets in old_value/new_value.
+model SystemLog {
+  system_log_id BigInt   @id @default(autoincrement())
+  company_id    BigInt?
+  user_id       BigInt?
+  action        String   @db.VarChar(120)
+  entity_type   String?  @db.VarChar(80)
+  entity_id     String?  @db.VarChar(80)
+  old_value     Json?
+  new_value     Json?
+  result        String   @default("success") @db.VarChar(10)
+  ip_address    String?  @db.VarChar(45)
+  created_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  @@index([company_id, created_at], map: "system_log_company_idx")
+  @@map("system_log")
 }
