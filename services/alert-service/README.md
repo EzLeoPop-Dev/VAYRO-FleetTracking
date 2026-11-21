@@ -25,7 +25,14 @@ Alert rules (GPS offline, overspeed), circular geofences, and the alerts created
 - [ ] `PATCH /api/v1/alerts/:id/handling`
 - [ ] `PATCH /api/v1/alerts/:id/resolve`
 
+Only the read-only `/internal` API for reporting-service exists so far; none of the public endpoints below.
+
 Every endpoint must check Authentication, Role and `company_id` from the signed-in user, never from the request body (PDF page 18).
+
+## Internal API other services call (not routed by the gateway, needs `x-internal-token`)
+
+- `GET /internal/stats/alerts?company_id=&from=&to=` alerts triggered in the window by type and status, how many are open, average time to resolve (for reporting-service)
+- `GET /internal/alerts?company_id=&from=&to=&type=&status=&limit=&offset=` one page of a company's alerts (for reporting-service)
 
 ## Data it needs from other services (ask them over `/internal/*`, never their database)
 

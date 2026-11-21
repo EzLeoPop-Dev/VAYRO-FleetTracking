@@ -27,6 +27,10 @@ Driver mobile uses the existing Login JWT plus a registered driver_mobile_app de
 
 Provider credentials: `POST`/`PUT /gps-devices` accept a write-only `credentials` object, encrypted (AES-256-GCM) into `credentials_encrypted`. Responses never contain it; they carry the derived boolean `has_credentials` (not a Data Dictionary column). `credentials: null` removes it. Plaintext secrets in `connection_config` are still rejected. Without `CREDENTIALS_ENCRYPTION_KEY` the server refuses to save credentials (503).
 
+## Reports and dashboards (service 11)
+
+`/api/v1/dashboard/{platform,company}` and `/api/v1/reports/{vehicles,routes,jobs,alerts,gps}` return computed figures, not Data Dictionary tables (the PDF asks for no dashboard table). Details, thresholds and what each number means are in `services/reporting-service/README.md`. Shared choices: BIGINT ids are strings; periods are ISO 8601 UTC and at most 31 days; `page`/`limit` and `meta.total`; `format=csv` downloads every row (UTF-8 with BOM, formula-safe, at most 5000 rows). GPS status is derived from the last **received** time (`current` within 5 minutes, `delayed`, `no_data`). A dashboard section whose source service is down is `{available:false, reason}`; a report fails with 503 instead of returning partial numbers.
+
 ## Ready for other developers
 
 All fourteen tables are ready as a shared schema. Vehicle/Job/Alert/Geofence/External Integration service owners can implement against their documented columns and relations. Having those tables does not claim their REST APIs or business workflows are built. Use DATABASE.md for safe migration commands and Postman README for local test setup. No frontend-to-database access or database credentials belong in browser code.

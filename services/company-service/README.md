@@ -27,6 +27,7 @@ Every endpoint must check Authentication, Role and `company_id` from the signed-
 ## Internal API other services call (not routed by the gateway, needs `x-internal-token`)
 
 - `GET /internal/companies/:id` returns `{company_id, workspace_status}`
+- `GET /internal/stats/companies` counts of workspaces by status (for reporting-service)
 
 ## Data it needs from other services (ask them over `/internal/*`, never their database)
 

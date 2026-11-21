@@ -1,6 +1,6 @@
-import { ApiError, companyScope, parseId, requireRole, type Identity } from "@vayro/service-kit";
+import { ApiError, companyScope, parseId, requireRole, sum, zeroFilled, type Identity } from "@vayro/service-kit";
 import type { VehicleDirectory } from "../adapters/vehicle-directory";
-import { isDisabled, settingsOf, validateSettings, type Settings } from "../domain/device";
+import { connectionStatus, DELAYED_AFTER_MS, isDisabled, settingsOf, validateSettings, type Settings } from "../domain/device";
 import { encryptCredentials, keyFromEnv } from "../lib/crypto";
 import * as devices from "../infrastructure/device.repository";
 import { audit } from "../lib/audit";
@@ -142,4 +142,29 @@ export async function deviceByCode(companyId: string, deviceCode: string) {
 
 export async function markReceived(id: string, at: Date) {
   await devices.update(prisma, parseId(id), { connection_status: "connected", last_received_at: at });
+}
+
+// ---- used by reporting-service through /internal (read only) ----
+
+const MAX_REPORT_DEVICES = 5000;
+
+// Counts of devices by derived connection status (a device that stopped reporting is "disconnected" whatever its stored
+// status says), for one company or the whole platform. Counted in the database, so it is exact for any number of devices.
+export async function deviceStats(companyId?: string) {
+  const rows = await devices.statusCounts(prisma, companyId ? parseId(companyId) : undefined, new Date(Date.now() - DELAYED_AFTER_MS));
+  const by_connection_status = zeroFilled(["connected", "disconnected", "error"], rows.map((r) => [r.status, r.n] as const));
+  return { total: sum(by_connection_status), by_connection_status, disabled: rows.filter((r) => r.disabled).reduce((n, r) => n + r.n, 0) };
+}
+
+export async function devicesOfVehicles(companyId: string, vehicleIds?: bigint[]) {
+  const rows = await devices.list(prisma, { company_id: parseId(companyId), ...(vehicleIds ? { vehicle_id: { in: vehicleIds } } : {}) }, MAX_REPORT_DEVICES, 0);
+  return rows.map((d) => ({
+    gps_device_id: idText(d.gps_device_id),
+    vehicle_id: idText(d.vehicle_id),
+    device_code: d.device_code,
+    source_type: d.source_type,
+    connection_status: connectionStatus(d),
+    last_received_at: d.last_received_at?.toISOString() ?? null,
+    disabled: isDisabled(d.connection_config),
+  }));
 }

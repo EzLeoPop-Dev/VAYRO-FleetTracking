@@ -26,6 +26,8 @@ Every endpoint must check Authentication, Role and `company_id` from the signed-
 ## Internal API other services call (not routed by the gateway, needs `x-internal-token`)
 
 - `GET /internal/jobs/in-progress?company_id=&vehicle_id=&driver_id=` returns `{exists}`
+- `GET /internal/stats/jobs?company_id=&from=&to=` jobs created in the window by status plus average duration of completed ones (for reporting-service)
+- `GET /internal/jobs?company_id=&from=&to=&status=&limit=&offset=` one page of a company's jobs (for reporting-service)
 
 ## Data it needs from other services (ask them over `/internal/*`, never their database)
 

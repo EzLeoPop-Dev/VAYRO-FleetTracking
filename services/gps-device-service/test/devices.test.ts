@@ -134,6 +134,29 @@ describe("internal API for gps-data-service", () => {
     const status = await call("GET", `/api/v1/gps-devices/${deviceId}/status`, "admin-a");
     expect(status.json.data.connection_status).toBe("connected"); expect(status.json.data.last_received_at).toBe(at);
   });
+  test("device counts made by the database follow the same rules as the device list", async () => {
+    const make = async (code: string, data: object) => {
+      const r = await call("POST", "/api/v1/gps-devices", "admin-a", { vehicle_id: vehicleA, device_code: `${code}-${run}`, source_type: "gps_device" });
+      expect(r.status).toBe(201);
+      await prisma.gpsDevice.update({ where: { gps_device_id: BigInt(r.json.data.gps_device_id) }, data });
+    };
+    await make("st-error", { connection_status: "error", last_received_at: new Date() });
+    await make("st-fresh", { connection_status: "connected", last_received_at: new Date() });
+    await make("st-stale", { connection_status: "connected", last_received_at: new Date(Date.now() - 3_600_000) }); // stored "connected" but silent for an hour
+    await make("st-off", { connection_status: "connected", last_received_at: new Date(), connection_config: { disabled: true } });
+    const list = (await call("GET", "/api/v1/gps-devices?limit=500", "admin-a")).json.data as { connection_status: "connected" | "disconnected" | "error"; connection_config: { disabled?: boolean } | null }[];
+    const expected = { connected: 0, disconnected: 0, error: 0 };
+    for (const d of list) expected[d.connection_status]++;
+    expect(expected.connected).toBeGreaterThan(0); expect(expected.disconnected).toBeGreaterThan(0); expect(expected.error).toBeGreaterThan(0);
+    const stats = await call("GET", `/internal/stats/devices?company_id=${companyA}`, undefined, undefined, internal);
+    expect(stats.status).toBe(200);
+    expect(stats.json.data.by_connection_status).toEqual(expected);
+    expect(stats.json.data.total).toBe(list.length);
+    expect(stats.json.data.disabled).toBe(list.filter((d) => d.connection_config?.disabled === true).length);
+    const platformWide = await call("GET", "/internal/stats/devices", undefined, undefined, internal);
+    expect(platformWide.json.data.total).toBeGreaterThanOrEqual(list.length);
+    expect((await call("GET", `/internal/stats/devices?company_id=${run + 99n}`, undefined, undefined, internal)).json.data.total).toBe(0); // another company's devices are not mixed in
+  });
   test("DELETE disables ingestion persistently without deleting the device", async () => {
     expect((await call("DELETE", `/api/v1/gps-devices/${deviceId}`, "admin-a")).status).toBe(200);
     app = newApp();

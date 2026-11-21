@@ -43,7 +43,7 @@ The project brief (PDF page 7, "Modular Monolith แยก 12 Service Modules") 
 | 8 | `route-history-service` | none | none | empty skeleton |
 | 9 | `transport-service` | `transport_db` | `transport_jobs` | data only; internal lookup, public API to do |
 | 10 | `alert-service` (Alert & Geofence) | `alert_db` | `alert_rules`, `geofences`, `alerts` | data only; skeleton |
-| 11 | `reporting-service` | none | none | empty skeleton |
+| 11 | `reporting-service` | none | none | done (7 endpoints, CSV export; reads the other services' `/internal` stats) |
 | 12 | `integration-service` (Integration & Logging) | `integration_db` | `api_integrations`, `api_request_logs`, `system_log` | data only; skeleton |
 
 Every service has a `README.md` with its PDF endpoint checklist, the internal API it offers, and the data it must ask other services for. Skeletons already boot, answer the Docker health check, and have `src/plugins/guard.ts` ready for protected routes.
