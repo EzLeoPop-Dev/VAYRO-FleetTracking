@@ -34,7 +34,7 @@ The project brief (PDF page 7, "Modular Monolith แยก 12 Service Modules") 
 | # | Service folder | Database | Tables it owns | Status |
 | --- | --- | --- | --- | --- |
 | 1 | `auth-service` | `auth_db` | `auth_sessions` | done (4 endpoints) |
-| 2 | `company-service` | `company_db` | `company` | `POST /companies/register` + internal lookup; rest of the list is to do |
+| 2 | `company-service` | `company_db` | `company` | all 7 PDF endpoints (register, list, get, edit, approve, reject, status) + internal lookup |
 | 3 | `user-service` | `user_db` | `users` | done (8 endpoints) |
 | 4 | `vehicle-service` | `vehicle_db` | `vehicle_types`, `vehicles` | data only; internal lookup, public API to do |
 | 5 | `gps-device-service` | `gps_device_db` | `gps_devices` | done (6 endpoints, encrypted provider credentials) |
