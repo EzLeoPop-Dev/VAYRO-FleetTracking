@@ -34,17 +34,17 @@ The project brief (PDF page 7, "Modular Monolith แยก 12 Service Modules") 
 | # | Service folder | Database | Tables it owns | Status |
 | --- | --- | --- | --- | --- |
 | 1 | `auth-service` | `auth_db` | `auth_sessions` | done (4 endpoints) |
-| 2 | `company-service` | `company_db` | `company` | `POST /companies/register` + internal lookup; rest of the list is to do |
+| 2 | `company-service` | `company_db` | `company` | all 7 PDF endpoints (register, list, get, edit, approve, reject, status) + internal lookup |
 | 3 | `user-service` | `user_db` | `users` | done (8 endpoints) |
 | 4 | `vehicle-service` | `vehicle_db` | `vehicle_types`, `vehicles` | data only; internal lookup, public API to do |
 | 5 | `gps-device-service` | `gps_device_db` | `gps_devices` | done (6 endpoints, encrypted provider credentials) |
 | 6 | `gps-data-service` | `gps_data_db` | `gps_locations` | done (3 endpoints, abnormal/missing-data detection, event push) |
 | 7 | `tracking-service` | none | none | empty skeleton |
-| 8 | `route-history-service` | none | none | empty skeleton |
-| 9 | `transport-service` | `transport_db` | `transport_jobs` | data only; internal lookup, public API to do |
-| 10 | `alert-service` (Alert & Geofence) | `alert_db` | `alert_rules`, `geofences`, `alerts` | data only; skeleton |
-| 11 | `reporting-service` | none | none | empty skeleton |
-| 12 | `integration-service` (Integration & Logging) | `integration_db` | `api_integrations`, `api_request_logs`, `system_log` | data only; skeleton |
+| 8 | `route-history-service` | none | none | public API done (route, points, summary); driver limited to own job time |
+| 9 | `transport-service` | `transport_db` | `transport_jobs`, `system_log` | public API done (jobs, driver jobs); internal lookups |
+| 10 | `alert-service` (Alert & Geofence) | `alert_db` | `alert_rules`, `geofences`, `alerts`, `system_log`, `vehicle_signal_state` | public API done; receives GPS points (overspeed, geofence, abnormal data) and checks GPS offline |
+| 11 | `reporting-service` | none | none | done (7 endpoints, CSV export; reads the other services' `/internal` stats) |
+| 12 | `integration-service` (Integration & Logging) | `integration_db` | `api_integrations`, `api_request_logs`, `system_log` | API keys, request log, system-log view done; gateway does not enforce API keys yet |
 
 Every service has a `README.md` with its PDF endpoint checklist, the internal API it offers, and the data it must ask other services for. Skeletons already boot, answer the Docker health check, and have `src/plugins/guard.ts` ready for protected routes.
 
@@ -84,7 +84,7 @@ Rule of thumb: routes only parse HTTP and call a service/use case; services/use 
 
 gps-data-service serves the three endpoints the PDF lists for service 6: `POST /api/v1/gps/ingest`, `GET /api/v1/gps/vehicles/:vehicleId/latest` and `/locations`. Services 7 (`/api/v1/tracking/*`: every vehicle's latest position with filters) and 8 (`/api/v1/routes/*`: route points and summary) are different endpoints; they are to read gps-data-service's `/internal/locations*`.
 
-All functions the PDF lists for services 1, 3, 5 and 6 are implemented. gps-data-service pushes new points only to services named in `GPS_EVENT_SUBSCRIBERS`; no service receives them yet (Alert & Geofence will).
+All functions the PDF lists for services 1, 3, 5 and 6 are implemented. gps-data-service pushes new points only to services named in `GPS_EVENT_SUBSCRIBERS`; alert-service receives them (`.env.example` sets `GPS_EVENT_SUBSCRIBERS=http://alert-service:3000`).
 Root dev scripts exist for all 12 services. See the shared contract before writing new APIs; do not invent alternate field spellings. IDs are BIGINT strings; timestamps are UTC ISO 8601; GPS values use speed_kmh, direction_degree, accuracy_meters and gps_location_id.
 
 ## 4. โครงสร้างเป้าหมายที่แนะนำ
@@ -153,8 +153,8 @@ GPS provider ───────┘                           │
 | GPS Position | `gps_locations`: latitude, longitude, speed_kmh, direction_degree, accuracy_meters, recorded_at, received_at | ค่า sensor ที่ไม่มีข้อมูลเป็น null |
 | Transport Job | `transport_jobs`: job_id, vehicle_id, driver_id, job_status | เก็บเวลานัดหมาย/เริ่ม/จบและ problem_note |
 | Route History | อ่าน `gps_locations` ตาม vehicle_id และ recorded_at | ไม่เพิ่มตารางประวัติเส้นทางนอก Data Dictionary |
-| Alert / Geofence | `alerts`, `alert_rules`, `geofences` | มีโครงสร้างตารางแล้ว; API และการประมวลผลเหตุการณ์ยังไม่สร้าง |
-| API Integration | `api_integrations`, `api_request_logs` | มีโครงสร้างตารางแล้ว; การออก API Key/Rate Limit ยังไม่สร้าง |
+| Alert / Geofence | `alerts`, `alert_rules`, `geofences` | API และการประมวลผลเหตุการณ์ (overspeed, geofence, GPS offline) สร้างแล้ว |
+| API Integration | `api_integrations`, `api_request_logs` | ออก/หมุน/เพิกถอน API Key และ verify + Rate Limit สร้างแล้ว; gateway ยังไม่บังคับใช้ API Key |
 | Audit / Session | `system_log`, `auth_sessions` | ไม่เก็บ password/token จริงใน log; Refresh Token เก็บเป็น hash |
 
 ชื่อตารางและฟิลด์ยึด Data Dictionary ใน PDF เป็นหลัก รายการทุกคอลัมน์อยู่ใน docs/data-dictionary.json; การปรับชนิดข้อมูลสำหรับ PostgreSQL อธิบายใน docs/DATABASE.md

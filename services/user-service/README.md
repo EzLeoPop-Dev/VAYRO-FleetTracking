@@ -16,3 +16,5 @@ Gateway URL stays `http://localhost:3001/api/v1/users`; local service port is 30
 Closing an account ends its sessions (retried); re-opening one ends the old sessions first and is refused with `503 SESSION_REVOKE_FAILED` if that cannot be done, so a re-opened account always signs in again. `POST /internal/users` is idempotent and `GET /internal/users/lookup` lets company-service check before it undoes a registration.
 
 First Platform Admin: `docker compose exec -T -e ADMIN_EMAIL -e ADMIN_FULL_NAME -e ADMIN_PASSWORD user-service bun scripts/create-platform-admin.ts`.
+
+For reporting-service it also offers `GET /internal/stats/users?company_id=` (counts of users by role and by status; without `company_id` the whole platform).

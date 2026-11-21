@@ -27,6 +27,8 @@ Every endpoint must check Authentication, Role and `company_id` from the signed-
 
 - `GET /internal/locations/latest?company_id=&vehicle_id=`
 - `GET /internal/locations?company_id=&vehicle_id=&from=&to=&limit=`
+- `GET /internal/locations/latest-by-vehicle?company_id=&vehicle_ids=` the newest point of every vehicle (for reporting-service)
+- `GET /internal/stats/vehicles?company_id=&from=&to=&vehicle_ids=` per vehicle: points, approximate distance, speeds, gaps, abnormal and late points over a window of at most 31 days, computed in SQL (for reporting-service)
 
 ## Data it needs from other services (ask them over `/internal/*`, never their database)
 
