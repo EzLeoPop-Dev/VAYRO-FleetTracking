@@ -1,4 +1,6 @@
 import { Elysia } from "elysia";
+import { routeRoutes } from "./routes/routes";
 
-// TODO(team): add this module's routes here. The endpoints and the data it needs are listed in README.md.
-export const app = new Elysia().get("/", () => ({ service: "route-history-service", status: "ok" })); // Docker health check
+export const app = new Elysia()
+  .get("/", () => ({ service: "route-history-service", status: "ok" })) // Docker health check
+  .use(routeRoutes);

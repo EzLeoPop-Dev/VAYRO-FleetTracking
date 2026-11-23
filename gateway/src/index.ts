@@ -60,10 +60,13 @@ const app = new Elysia()
           headers,
           body: ["GET", "HEAD"].includes(request.method) ? undefined : await request.arrayBuffer(),
         });
-        return new Response(upstream.body, {
-          status: upstream.status,
-          headers: { "content-type": upstream.headers.get("content-type") ?? "application/json" },
-        });
+        // Only these response headers are passed on: the type, and what a file download (a CSV report) needs.
+        const out = new Headers({ "content-type": upstream.headers.get("content-type") ?? "application/json" });
+        for (const name of ["content-disposition", "cache-control"]) {
+          const value = upstream.headers.get(name);
+          if (value) out.set(name, value);
+        }
+        return new Response(upstream.body, { status: upstream.status, headers: out });
       } catch {
         set.status = 502;
         return { success: false, error: { code: "UPSTREAM_UNAVAILABLE", message: "Service unavailable" } };

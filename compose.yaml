@@ -35,6 +35,17 @@ services:
       POSTGRES_DB: vayro
       POSTGRES_USER: vayro
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?copy .env.example to .env}
+      # One password per service database. Only this container sees all of them; each service gets only its own
+      # (in its DATABASE_URL) and never the POSTGRES_PASSWORD of the admin account.
+      DB_PASSWORD_AUTH: ${DB_PASSWORD_AUTH:?copy .env.example to .env}
+      DB_PASSWORD_COMPANY: ${DB_PASSWORD_COMPANY:?copy .env.example to .env}
+      DB_PASSWORD_USER: ${DB_PASSWORD_USER:?copy .env.example to .env}
+      DB_PASSWORD_VEHICLE: ${DB_PASSWORD_VEHICLE:?copy .env.example to .env}
+      DB_PASSWORD_GPS_DEVICE: ${DB_PASSWORD_GPS_DEVICE:?copy .env.example to .env}
+      DB_PASSWORD_GPS_DATA: ${DB_PASSWORD_GPS_DATA:?copy .env.example to .env}
+      DB_PASSWORD_TRANSPORT: ${DB_PASSWORD_TRANSPORT:?copy .env.example to .env}
+      DB_PASSWORD_ALERT: ${DB_PASSWORD_ALERT:?copy .env.example to .env}
+      DB_PASSWORD_INTEGRATION: ${DB_PASSWORD_INTEGRATION:?copy .env.example to .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
       # Runs on a new volume only: creates one database + role per service. For an existing volume see docs/DATABASE.md.
@@ -56,7 +67,7 @@ services:
         SERVICE: services/auth-service
     environment:
       <<: *internal
-      DATABASE_URL: postgres://auth_svc:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/auth_db
+      DATABASE_URL: postgres://auth_svc:${DB_PASSWORD_AUTH:?copy .env.example to .env}@postgres:5432/auth_db
       JWT_SECRET: ${JWT_SECRET:?copy .env.example to .env}
       USER_SERVICE_URL: http://user-service:3000
       COMPANY_SERVICE_URL: http://company-service:3000
@@ -82,7 +93,7 @@ services:
         SERVICE: services/company-service
     environment:
       <<: *internal
-      DATABASE_URL: postgres://company_svc:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/company_db
+      DATABASE_URL: postgres://company_svc:${DB_PASSWORD_COMPANY:?copy .env.example to .env}@postgres:5432/company_db
       AUTH_SERVICE_URL: http://auth-service:3000
       USER_SERVICE_URL: http://user-service:3000
     depends_on:
@@ -101,7 +112,7 @@ services:
         SERVICE: services/user-service
     environment:
       <<: *internal
-      DATABASE_URL: postgres://user_svc:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/user_db
+      DATABASE_URL: postgres://user_svc:${DB_PASSWORD_USER:?copy .env.example to .env}@postgres:5432/user_db
       AUTH_SERVICE_URL: http://auth-service:3000
       COMPANY_SERVICE_URL: http://company-service:3000
     depends_on:
@@ -122,7 +133,7 @@ services:
         SERVICE: services/vehicle-service
     environment:
       <<: *internal
-      DATABASE_URL: postgres://vehicle_svc:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/vehicle_db
+      DATABASE_URL: postgres://vehicle_svc:${DB_PASSWORD_VEHICLE:?copy .env.example to .env}@postgres:5432/vehicle_db
       AUTH_SERVICE_URL: http://auth-service:3000
       USER_SERVICE_URL: http://user-service:3000
       COMPANY_SERVICE_URL: http://company-service:3000
@@ -142,7 +153,7 @@ services:
         SERVICE: services/gps-device-service
     environment:
       <<: *internal
-      DATABASE_URL: postgres://gps_device_svc:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/gps_device_db
+      DATABASE_URL: postgres://gps_device_svc:${DB_PASSWORD_GPS_DEVICE:?copy .env.example to .env}@postgres:5432/gps_device_db
       # Optional. Without it the service runs, but saving provider credentials is refused (503).
       CREDENTIALS_ENCRYPTION_KEY: "${CREDENTIALS_ENCRYPTION_KEY:-}"
       AUTH_SERVICE_URL: http://auth-service:3000
@@ -163,7 +174,7 @@ services:
         SERVICE: services/gps-data-service
     environment:
       <<: *internal
-      DATABASE_URL: postgres://gps_data_svc:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/gps_data_db
+      DATABASE_URL: postgres://gps_data_svc:${DB_PASSWORD_GPS_DATA:?copy .env.example to .env}@postgres:5432/gps_data_db
       TRACKING_API_TOKENS: "${TRACKING_API_TOKENS:-}"
       # Optional, comma separated base URLs of services that want every new point pushed (e.g. http://alert-service:3000).
       GPS_EVENT_SUBSCRIBERS: "${GPS_EVENT_SUBSCRIBERS:-}"
@@ -208,7 +219,7 @@ services:
     restart: unless-stopped
     healthcheck: *healthcheck
 
-  # 8. Route History. No database; skeleton (no routes yet).
+  # 8. Route History. No database: reads stored points from gps-data-service.
   route-history-service:
     build:
       context: .
@@ -220,11 +231,12 @@ services:
       AUTH_SERVICE_URL: http://auth-service:3000
       GPS_DATA_SERVICE_URL: http://gps-data-service:3000
       VEHICLE_SERVICE_URL: http://vehicle-service:3000
+      TRANSPORT_SERVICE_URL: http://transport-service:3000
     init: true
     restart: unless-stopped
     healthcheck: *healthcheck
 
-  # 9. Transport Job. Owns: transport_jobs. Assignment and Driver lifecycle APIs.
+  # 9. Transport Job. Owns transport_jobs and system_log.
   transport-service:
     build:
       context: .
@@ -233,11 +245,13 @@ services:
         SERVICE: services/transport-service
     environment:
       <<: *internal
-      DATABASE_URL: postgres://transport_svc:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/transport_db
+      DATABASE_URL: postgres://transport_svc:${DB_PASSWORD_TRANSPORT:?copy .env.example to .env}@postgres:5432/transport_db
       AUTH_SERVICE_URL: http://auth-service:3000
       USER_SERVICE_URL: http://user-service:3000
       VEHICLE_SERVICE_URL: http://vehicle-service:3000
       COMPANY_SERVICE_URL: http://company-service:3000
+      # Optional: raises "new job" / "job problem" alerts and pauses the offline check when a job ends.
+      ALERT_SERVICE_URL: http://alert-service:3000
     depends_on:
       postgres:
         condition: service_healthy
@@ -245,7 +259,7 @@ services:
     restart: unless-stopped
     healthcheck: *healthcheck
 
-  # 10. Alert & Geofence. Owns: alert_rules, geofences, alerts. Skeleton (no routes yet).
+  # 10. Alert & Geofence. Owns: alert_rules, geofences, alerts (+ its own system_log and vehicle_signal_state).
   alert-service:
     build:
       context: .
@@ -254,7 +268,7 @@ services:
         SERVICE: services/alert-service
     environment:
       <<: *internal
-      DATABASE_URL: postgres://alert_svc:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/alert_db
+      DATABASE_URL: postgres://alert_svc:${DB_PASSWORD_ALERT:?copy .env.example to .env}@postgres:5432/alert_db
       AUTH_SERVICE_URL: http://auth-service:3000
       GPS_DATA_SERVICE_URL: http://gps-data-service:3000
       VEHICLE_SERVICE_URL: http://vehicle-service:3000
@@ -297,9 +311,12 @@ services:
         SERVICE: services/integration-service
     environment:
       <<: *internal
-      DATABASE_URL: postgres://integration_svc:${POSTGRES_PASSWORD:?copy .env.example to .env}@postgres:5432/integration_db
+      DATABASE_URL: postgres://integration_svc:${DB_PASSWORD_INTEGRATION:?copy .env.example to .env}@postgres:5432/integration_db
       AUTH_SERVICE_URL: http://auth-service:3000
       COMPANY_SERVICE_URL: http://company-service:3000
+      # GET /api/v1/system-logs also collects the audit rows of these services over their /internal/system-logs.
+      TRANSPORT_SERVICE_URL: http://transport-service:3000
+      ALERT_SERVICE_URL: http://alert-service:3000
     depends_on:
       postgres:
         condition: service_healthy

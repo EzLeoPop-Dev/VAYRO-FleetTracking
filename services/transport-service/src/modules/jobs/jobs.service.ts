@@ -1,6 +1,7 @@
 import { ApiError, companyScope, parseId, requireRole, type Caller } from "@vayro/service-kit";
 import type { CreateTransportJobRequest, TransportJobRecord, TransportJobStatus, UpdateTransportJobRequest } from "../../../../../packages/shared-types";
 import type { Directories } from "../../adapters/directories";
+import { pauseOfflineCheck, raiseAlert } from "../../adapters/alert-service";
 import { audit } from "../../lib/audit";
 import { prisma, Prisma, type Db } from "../../lib/prisma";
 import { cleanText, invalid, optionalText, parseDate, toJob, validateRoute, type JobRow } from "./jobs.model";
@@ -79,6 +80,17 @@ const auditState = (row: JobRow) => ({ job_code: row.job_code, job_status: row.j
 async function log(db: Db, ctx: JobContext, action: string, row: JobRow, old?: JobRow) {
   await audit({ companyId: row.company_id, userId: ctx.me.user_id, action: `transport_job.${action}`, entityType: "transport_job", entityId: row.job_id, oldValue: old ? auditState(old) : undefined, newValue: auditState(row), ip: ctx.ip }, db);
 }
+function announceAssignment(row: JobRow) {
+  if (row.job_status !== "assigned" || row.driver_id === null || row.vehicle_id === null) return;
+  void raiseAlert({
+    company_id: String(row.company_id),
+    alert_type: "job_assignment",
+    title: `New job assigned: ${row.job_code}`,
+    vehicle_id: String(row.vehicle_id),
+    job_id: String(row.job_id),
+    recipient_user_id: String(row.driver_id),
+  });
+}
 export async function listJobs(ctx: JobContext, query: Query, driverOnly = false) {
   if (driverOnly) requireRole(ctx.me, "driver"); else manager(ctx.me);
   const where: Prisma.TransportJobWhereInput = { ...scope(ctx.me, query.company_id), job_status: query.job_status };
@@ -102,27 +114,32 @@ export async function createJob(ctx: JobContext, body: CreateTransportJobRequest
     const created = await repository.create(tx, { ...data, company_id: company, created_by: parseId(ctx.me.user_id) });
     await log(tx, ctx, "create", created); return created;
   });
+  announceAssignment(row);
   return (await enrich([row], ctx.directories))[0];
 }
 export async function updateJob(ctx: JobContext, id: string, body: UpdateTransportJobRequest, action = "update") {
   manager(ctx.me);
-  const row = await prisma.$transaction(async (tx) => {
+  const { row, assignmentChanged } = await prisma.$transaction(async (tx) => {
     const old = await target(tx, ctx.me, id);
     if (!["pending", "assigned"].includes(old.job_status)) conflict("Only pending or assigned jobs can be edited");
     const data = dataFor(body, old);
     await validateAssignment(ctx.directories, old.company_id, data.vehicle_id as bigint | null, data.driver_id as bigint | null);
     const updated = await repository.update(tx, old.job_id, data);
-    await log(tx, ctx, action, updated, old); return updated;
+    await log(tx, ctx, action, updated, old);
+    return { row: updated, assignmentChanged: updated.vehicle_id !== old.vehicle_id || updated.driver_id !== old.driver_id };
   });
+  if (assignmentChanged) announceAssignment(row);
   return (await enrich([row], ctx.directories))[0];
 }
 export async function transition(ctx: JobContext, id: string, action: "accept" | "start" | "complete" | "problem" | "cancel", note?: string) {
   if (action === "cancel") manager(ctx.me); else requireRole(ctx.me, "driver");
   const desired = { accept: "accepted", start: "in_progress", complete: "completed", problem: "problem", cancel: "cancelled" }[action] as TransportJobStatus;
-  const row = await prisma.$transaction(async (tx) => {
+  const { row, changed, wasRunning } = await prisma.$transaction(async (tx) => {
     const old = await target(tx, ctx.me, id);
     const problem = action === "problem" ? cleanText(note!) : undefined;
-    if (old.job_status === desired && (action !== "problem" || old.problem_note === problem)) return old;
+    if (old.job_status === desired && (action !== "problem" || old.problem_note === problem)) {
+      return { row: old, changed: false, wasRunning: false };
+    }
     const allowed: Record<typeof action, string[]> = { accept: ["assigned"], start: ["accepted", "problem"], complete: ["in_progress"], problem: ["accepted", "in_progress"], cancel: ["pending", "assigned", "accepted", "in_progress", "problem"] };
     if (!allowed[action].includes(old.job_status)) conflict(`Cannot ${action} a ${old.job_status} job`);
     if (action === "accept" || action === "start") {
@@ -138,7 +155,22 @@ export async function transition(ctx: JobContext, id: string, action: "accept" |
       ...(action === "complete" ? { actual_end_at: old.actual_end_at ?? now } : {}),
       ...(action === "problem" ? { problem_note: problem } : {}),
     });
-    await log(tx, ctx, action, updated, old); return updated;
+    await log(tx, ctx, action, updated, old);
+    return { row: updated, changed: true, wasRunning: old.job_status === "in_progress" };
   }, { timeout: 15000 });
+  if (wasRunning && row.vehicle_id !== null && row.job_status !== "in_progress") {
+    void pauseOfflineCheck(String(row.company_id), String(row.vehicle_id));
+  }
+  if (changed && action === "problem") {
+    void raiseAlert({
+      company_id: String(row.company_id),
+      alert_type: "system_anomaly",
+      title: `Job problem: ${row.job_code}`,
+      detail: row.problem_note ?? undefined,
+      vehicle_id: row.vehicle_id === null ? null : String(row.vehicle_id),
+      job_id: String(row.job_id),
+      event_data: { reason: "job_problem", reported_by: ctx.me.user_id },
+    });
+  }
   return (await enrich([row], ctx.directories))[0];
 }

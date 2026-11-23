@@ -32,7 +32,7 @@ Each service owns its tables in its own database (auth_db, company_db, user_db, 
 
 แต่ละ container ใช้พอร์ต 3000 ภายในและ bind host port เฉพาะ localhost
 Compose มี PostgreSQL (ไม่เปิดพอร์ตออกเครื่อง) ที่สร้างฐานข้อมูลต่อ service จาก `infra/database/init/` ตอนสร้าง volume ครั้งแรก ส่วนตารางสร้างโดย Prisma migration ของแต่ละ service ตอน container เริ่มทำงาน
-ต้องมี `.env` (`POSTGRES_PASSWORD`, `JWT_SECRET`, `INTERNAL_API_TOKEN`) ก่อนรัน ไม่มีข้อมูล GPS จริงในชุดนี้
+ต้องมี `.env` (`POSTGRES_PASSWORD`, `DB_PASSWORD_<SERVICE>` ของแต่ละฐาน 9 ตัว, `JWT_SECRET`, `INTERNAL_API_TOKEN`) ก่อนรัน แต่ละ service ได้รหัสของฐานตัวเองเท่านั้น ไม่รู้รหัสแอดมินของ Postgres ไม่มีข้อมูล GPS จริงในชุดนี้
 gateway ส่งทุก path ใน /api/v1 ไป service ที่เป็นเจ้าของตามตาราง route ใน `gateway/src/index.ts`; service เรียกกันเองผ่าน /internal/* (gateway ไม่ส่งต่อ)
 health check ตรวจ HTTP `/` ของแต่ละบริการ ไม่ได้ตรวจฟังก์ชันธุรกิจ
 

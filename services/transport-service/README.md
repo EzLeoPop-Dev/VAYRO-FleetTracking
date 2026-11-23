@@ -5,7 +5,7 @@ Transport jobs: create, assign vehicle and driver, start, complete, report a pro
 | | |
 | --- | --- |
 | Database | `transport_db` (role `transport_svc`), Prisma schema in `prisma/schema.prisma` |
-| Owns tables | `transport_jobs` |
+| Owns tables | `transport_jobs`, `system_log` |
 | Gateway prefix | see `gateway/src/index.ts` |
 
 ## Public endpoints (from the project PDF, pages 18-26)
@@ -34,9 +34,14 @@ GPS is not part of these actions. Optional cargo is plain text (max 2000 charact
 
 Transport requires `DATABASE_URL`, `INTERNAL_API_TOKEN`, `AUTH_SERVICE_URL`, `USER_SERVICE_URL`, `VEHICLE_SERVICE_URL`, `COMPANY_SERVICE_URL`. Run migrations and generate the client before starting. `bun test` uses the service's PostgreSQL database with unique test company ids and fake auth/directory adapters; test fixtures are retained.
 
+When `ALERT_SERVICE_URL` is set, Transport sends assignment and problem alerts after the database commits. It also pauses the offline check when a running job stops. Alert delivery failure does not roll back the job.
+
 ## Internal API other services call (not routed by the gateway, needs `x-internal-token`)
 
 - `GET /internal/jobs/in-progress?company_id=&vehicle_id=&driver_id=` returns `{exists}`
+- `GET /internal/stats/jobs` and `GET /internal/jobs` provide Reporting counts and job rows.
+- `GET /internal/jobs/driver-windows` provides job windows for Route History.
+- `GET /internal/system-logs` provides Transport audit rows for Integration.
 
 ## Data it needs from other services (ask them over `/internal/*`, never their database)
 

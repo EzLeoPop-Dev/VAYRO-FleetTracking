@@ -111,6 +111,16 @@ export async function changeRole(me: Caller, id: string, body: { role: Role; com
 
 export async function changeStatus(me: Caller, id: string, status: Status, ip: string | null) {
   if (id === me.user_id) throw new ApiError(409, "CONFLICT", "You cannot change your own status");
+  // Re-opening an account: its old sessions must already be dead, or they would work again the moment the account is
+  // active. The account cannot sign in yet, so ending them first is safe; if auth-service cannot be reached after a few
+  // tries the change is refused and nothing is changed.
+  if (status === "active") {
+    const current = await users.findOne(prisma, { user_id: parseId(id), ...companyScope(me) });
+    if (!current) throw new ApiError(404, "NOT_FOUND", "User not found");
+    if (current.account_status !== "active" && !(await revokeSessions(id))) {
+      throw new ApiError(503, "SESSION_REVOKE_FAILED", "The account's old sessions could not be ended, so it was not reactivated. Try again.");
+    }
+  }
   const row = await prisma.$transaction(async (tx) => {
     const old = await target(tx, companyScope(me), id);
     const updated = await users.update(tx, old.user_id, { account_status: status });
@@ -118,7 +128,8 @@ export async function changeStatus(me: Caller, id: string, status: Status, ip: s
       oldValue: { account_status: old.account_status }, newValue: { account_status: updated.account_status }, ip }, tx);
     return updated;
   });
-  // Sessions live in auth-service's database, so they are revoked after the status change commits.
+  // Closing an account: its sessions are ended right after the change. The user is already blocked by auth-service's
+  // status check, and a miss here cannot be used later because re-opening ends them again first (above).
   if (status !== "active") await revokeSessions(String(row.user_id));
   return publicUser(row);
 }

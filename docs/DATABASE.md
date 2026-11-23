@@ -1,6 +1,6 @@
 # PostgreSQL: one database per service, managed with Prisma
 
-The field contract is still the project PDF Data Dictionary: [data-dictionary.json](data-dictionary.json) lists every field, and [API_DATA_CONTRACT.md](API_DATA_CONTRACT.md) lists how it appears in the API. What changed is **who owns each table**. The PDF (page 7) describes 12 service modules; each module that owns data has its own database and its own login role on the one Postgres server, and a service cannot connect to another service's database.
+The field contract is still the project PDF Data Dictionary: [data-dictionary.json](data-dictionary.json) lists every field, and [API_DATA_CONTRACT.md](API_DATA_CONTRACT.md) lists how it appears in the API. What changed is **who owns each table**. The PDF (page 7) describes 12 service modules; each module that owns data has its own database and its own login role **with its own password** on the one Postgres server. A service cannot connect to another service's database, and no service knows the admin password (`POSTGRES_PASSWORD`): `compose.yaml` gives each service only its own `DB_PASSWORD_<SERVICE>` inside its `DATABASE_URL`. Only the postgres container sees all of them.
 
 | # | Service | Database / role | Tables it owns |
 | --- | --- | --- | --- |
@@ -28,13 +28,14 @@ Each service's schema is in `services/<name>/prisma/schema.prisma`; the same 14 
   - user-service: `POST /internal/credentials/verify`, `GET /internal/users/:id`, `POST /internal/users`
   - vehicle-service: `GET /internal/vehicles/:id?company_id=`
   - gps-device-service: `GET /internal/devices/by-code`, `POST /internal/devices/:id/received`
-  - gps-data-service: `GET /internal/locations/latest`, `GET /internal/locations`
-  - transport-service: `GET /internal/jobs/in-progress`
+  - gps-data-service: `GET /internal/locations/latest`, `GET /internal/locations`, `GET /internal/locations/latest-by-vehicle`, `GET /internal/stats/vehicles`
+  - transport-service: `GET /internal/jobs/in-progress`, `GET /internal/stats/jobs`, `GET /internal/jobs`
+  - read-only figures for reporting-service: `GET /internal/stats/companies` (company), `GET /internal/stats/users` (user), `GET /internal/stats/vehicles` + `GET /internal/vehicles` (vehicle), `GET /internal/stats/devices` + `GET /internal/devices` (gps-device), `GET /internal/stats/alerts` + `GET /internal/alerts` (alert)
 - **`system_log` is kept per service.** The PDF has one `system_log` table; here every service that writes audit events keeps its own copy (same columns, no foreign keys) so a change and its audit row commit in one transaction. integration-service has the table too and is where `GET /api/v1/system-logs` is built; collecting the others' logs for that view is left to its owner (each service can expose its log over `/internal/*`).
-- **Company registration spans two services.** company-service creates the company, then asks user-service to create the first Company Admin. If that fails, the company is deleted again; a crash between the two steps would leave a pending company with no admin.
+- **Company registration spans two services.** company-service creates the company, then asks user-service to create the first Company Admin. Because "no answer" does not mean "not done", a failed create is never trusted by itself: company-service first looks the admin up (`GET /internal/users/lookup`). Found: the company is kept and registration succeeds. Not found: the company is deleted and the original error returned (the client may retry). Cannot tell (user-service unreachable): the company is kept as `pending` and the answer is `503 REGISTRATION_UNCONFIRMED`, because deleting it could orphan an admin; a platform admin cleans such a case up. `POST /internal/users` is idempotent: the same e-mail already being that company's admin returns 200, never a second account.
 - **Same-company rules** that used to be composite foreign keys are now checked by the code through those internal calls.
 - **Known gaps:** the database no longer stops user-service from moving a driver out of a company while a vehicle still points at that driver (add the check when vehicle-service gets its public API); a GPS point that arrives while its device is being disabled can still be stored; a failed "device received data" update is only logged (device status is derived from `last_received_at`, so the next point repairs it).
-- **Session revoke is eventual.** Changing a user's status commits first, then user-service asks auth-service to revoke their sessions. The user is blocked immediately either way, because auth-service checks status on every request and refresh.
+- **Session revoke is retried, and re-opening an account depends on it.** Closing an account (inactive/suspended) commits first, then user-service asks auth-service to end the user's sessions (3 tries). The user is blocked either way, because auth-service checks status on every request and refresh. Re-opening an account ends the old sessions first (3 tries) and, if auth-service still cannot be reached, refuses the change (`503 SESSION_REVOKE_FAILED`, nothing changed). So a missed revoke can never bring an old session back to life: a re-opened account always has to sign in again.
 
 ## Prisma workflow
 
@@ -51,11 +52,11 @@ Containers run `prisma migrate deploy` automatically before the server starts (`
 
 ## New install
 
-`docker compose up --build -d --wait` on an empty volume creates the nine databases and roles (`infra/database/init/01-create-databases.sh`), then each service creates its tables from its migration. Copy `.env.example` to `.env` first (`INTERNAL_API_TOKEN` is new; set `CREDENTIALS_ENCRYPTION_KEY` if GPS provider credentials will be stored).
+`docker compose up --build -d --wait` on an empty volume creates the nine databases and roles (`infra/database/init/01-create-databases.sh`), then each service creates its tables from its migration. Copy `.env.example` to `.env` first and replace the secrets: `INTERNAL_API_TOKEN`, one `DB_PASSWORD_<SERVICE>` per database (nine, all different: `openssl rand -hex 24`), and `CREDENTIALS_ENCRYPTION_KEY` if GPS provider credentials will be stored.
 
 ## Existing install: move data out of the old shared database
 
-Do not run `docker compose down -v`: it deletes the volume. The old database is only read, never changed or dropped, so it stays as a backup. Run from the repository root with the current stack up (add `INTERNAL_API_TOKEN` to `.env` first):
+Do not run `docker compose down -v`: it deletes the volume. The old database is only read, never changed or dropped, so it stays as a backup. Run from the repository root with the current stack up. First add `INTERNAL_API_TOKEN` and the nine `DB_PASSWORD_*` values to `.env` (see `.env.example`). If an earlier version already created the databases with the shared password, the second command also switches each role to its own password; then recreate the services (`docker compose up -d --build`) so they pick it up:
 
 ```sh
 docker compose up -d postgres
@@ -66,7 +67,7 @@ docker compose exec -T postgres sh < infra/database/split-legacy.sh
 
 On Windows with Git Bash, put `MSYS_NO_PATHCONV=1` in front of the second command (it stops Git Bash rewriting the `/docker-entrypoint-initdb.d/...` path); PowerShell needs nothing. Before starting, a backup is cheap: `docker compose exec -T postgres pg_dump -U vayro vayro > backups/vayro-before-split.sql` (`backups/` is git-ignored because the dump contains password hashes).
 
-The script copies each table, keeps ids, moves the sequences past the copied ids, compares row counts, and skips any table that already has rows, so running it again is safe. Old audit rows are split by action prefix (`auth.*`, `company.*`, `user.*`, `gps_device.*`; anything else goes to `integration_db`). Between the third and fourth command the new databases are empty: users cannot sign in until the copy finishes, so do it in one sitting.
+For every table the script copies the source rows the new database does not have yet (matched on the primary key; a row already there is never overwritten), then checks that **every** source row is present. A table that was only partly copied is completed, not skipped; a row that cannot be copied (for example its e-mail already belongs to a different row) is reported as `MISSING` and the script exits 1. It keeps ids, moves the sequences past the copied ids, and leaves rows the services wrote later alone, so running it again at any time is safe. Old audit rows are split by action prefix (`auth.*`, `company.*`, `user.*`, `gps_device.*`; anything else goes to `integration_db`). Between the third and fourth command the new databases are empty: users cannot sign in until the copy finishes, so do it in one sitting.
 
 The earlier numbered SQL migrations are kept in `infra/database/legacy/` for reference only; nothing runs them any more.
 
