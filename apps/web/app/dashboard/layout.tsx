@@ -7,6 +7,7 @@ import AdminShell from "./_components/admin-shell";
 import { TransportJobsProvider } from "@/lib/transport-client";
 import FleetDashboard from "./_map/fleet-dashboard";
 import { FleetVehiclesProvider } from "./_components/fleet-vehicles";
+import { CompanySummaryProvider } from "@/lib/company-summary";
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
@@ -35,11 +36,13 @@ async function SignedInDashboard({ children }: { children: ReactNode }) {
   const { full_name, user_id, role, company_id, company_name } = session.data;
   return (
     <TransportJobsProvider key={`${company_id}:${user_id}:${role}`} mode="company">
+      <CompanySummaryProvider companyId={company_id} canView={role === "company_admin"}>
       <FleetVehiclesProvider canManage={role === "company_admin"}>
       <AdminShell user={{ full_name, user_id, role, company_id, company_name }} map={<FleetDashboard />}>
         {children}
       </AdminShell>
       </FleetVehiclesProvider>
+      </CompanySummaryProvider>
     </TransportJobsProvider>
   );
 }

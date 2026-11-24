@@ -92,6 +92,7 @@ export function TransportJobsProvider({ mode, children }: { mode: "company" | "d
     try {
       const result = await requestJobs<TransportJobRecord>(path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(input) });
       if (result.ok) {
+        window.dispatchEvent(new Event("vayro:summary-changed"));
         setJobs((current) => [result.data, ...current.filter((job) => job.job_id !== result.data.job_id)]);
         setError(null);
       }

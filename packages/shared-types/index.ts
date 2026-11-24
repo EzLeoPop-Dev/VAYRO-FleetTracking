@@ -155,6 +155,16 @@ export interface GpsGap {
   minutes: number;
 }
 
+export type FleetGpsPoint = Pick<GpsLocation,
+  "vehicle_id" | "latitude" | "longitude" | "speed_kmh" | "direction_degree" |
+  "recorded_at" | "received_at" | "freshness" | "anomalies"
+>;
+
+export interface FleetGpsSnapshot {
+  company_id: string;
+  points: FleetGpsPoint[];
+}
+
 // Navigation preview uses road-provider data. Coordinates in GeoJSON are [longitude, latitude].
 export interface NavigationPoint {
   latitude: number;
@@ -283,3 +293,32 @@ export interface CreateTransportJobRequest {
 export type UpdateTransportJobRequest = Partial<Omit<CreateTransportJobRequest, "company_id">>;
 export interface AssignTransportJobRequest { vehicle_id: string | null; driver_id: string | null }
 export interface TransportJobProblemRequest { problem_note: string }
+
+export interface EmployeeDashboardCounts {
+  company_id: string;
+  total: number;
+  by_role: Record<Exclude<Role, "platform_admin">, number>;
+  by_status: Record<AccountStatus, number>;
+}
+
+export interface VehicleDashboardCounts {
+  company_id: string;
+  total: number;
+  by_status: Record<VehicleStatus, number>;
+  by_type: { vehicle_type_id: string | null; type_name: string | null; count: number }[];
+}
+
+export interface JobDashboardCounts {
+  company_id: string;
+  total: number;
+  by_status: Record<TransportJobStatus, number>;
+}
+
+/** Counts are collected from each owning service; this is not a cross-database transaction. */
+export interface CompanyDashboardSummary {
+  company_id: string;
+  generated_at: string;
+  employees: EmployeeDashboardCounts;
+  vehicles: VehicleDashboardCounts;
+  jobs: JobDashboardCounts;
+}

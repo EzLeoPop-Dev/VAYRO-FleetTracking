@@ -3,7 +3,8 @@ import {
   AmbientLight, BoxGeometry, Camera, CylinderGeometry, DirectionalLight, Group,
   Matrix4, Mesh, MeshLambertMaterial, Scene, WebGLRenderer,
 } from "three";
-import { DEMO_CENTER, type FleetVehicle, type VehicleCategory } from "../_data/fleet-demo";
+import { DEMO_CENTER, type VehicleCategory } from "../_data/fleet-demo";
+import { hasVehicleModel, type MapVehicle } from "../_data/map-vehicle";
 
 type Dimensions = [width: number, length: number, height: number];
 type Point = [x: number, y: number, z: number];
@@ -87,7 +88,7 @@ function createVehicleAssets() {
 
 export function createVehicleLayer(
   id: string,
-  getVehicles: () => readonly FleetVehicle[],
+  getVehicles: () => readonly MapVehicle[],
   onAvailabilityChange: (available: boolean) => void,
 ): CustomLayerInterface {
   const camera = new Camera();
@@ -119,7 +120,7 @@ export function createVehicleLayer(
     },
     render(gl, options) {
       if (!renderer || !map || gl.isContextLost()) return;
-      const vehicles = getVehicles();
+      const vehicles = getVehicles().filter(hasVehicleModel);
       if (!vehicles.length) return;
 
       const visibleIds = new Set(vehicles.map(({ id }) => id));

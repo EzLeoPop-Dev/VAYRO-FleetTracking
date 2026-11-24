@@ -6,7 +6,8 @@ import type {
   Map as MapLibreMap,
   Marker as MapLibreMarker,
 } from "maplibre-gl";
-import { DEMO_CENTER, type FleetVehicle } from "../_data/fleet-demo";
+import { DEMO_CENTER } from "../_data/fleet-demo";
+import { hasVehicleModel, mapVehicleLabel, type MapVehicle } from "../_data/map-vehicle";
 import FleetMapSchematic, { vehicleColors } from "./fleet-map-schematic";
 
 type OverlayInsets = {
@@ -17,7 +18,7 @@ type OverlayInsets = {
 };
 
 type FleetMapProps = {
-  vehicles: FleetVehicle[];
+  vehicles: MapVehicle[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   theme: "light" | "dark";
@@ -65,7 +66,7 @@ const STYLE_URL = {
 };
 const routeColor = { light: "#c53849", dark: "#ff8e92" };
 
-function getVehicleKey(vehicles: FleetVehicle[]) {
+function getVehicleKey(vehicles: MapVehicle[]) {
   return vehicles.map(({ id }) => id).join("|");
 }
 
@@ -124,12 +125,11 @@ function fitFleet(
   );
 }
 
-function createMarker(session: MapSession, vehicle: FleetVehicle): MarkerParts {
+function createMarker(session: MapSession, vehicle: MapVehicle): MarkerParts {
   const button = document.createElement("button");
   button.type = "button";
   button.className =
     "group relative grid size-10 cursor-pointer place-items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--fleet-focus)]";
-  button.setAttribute("aria-label", `เลือก ${vehicle.kind} ${vehicle.plate}`);
   button.addEventListener("click", () => session.select(vehicle.id));
 
   const dot = document.createElement("span");
@@ -142,7 +142,6 @@ function createMarker(session: MapSession, vehicle: FleetVehicle): MarkerParts {
   const label = document.createElement("span");
   label.className =
     "pointer-events-none absolute bottom-full whitespace-nowrap rounded-md border border-[var(--fleet-line)] bg-[var(--fleet-surface)] px-2 py-1 font-mono text-xs font-bold text-[color:var(--fleet-text)] shadow-md";
-  label.textContent = vehicle.id;
   label.setAttribute("aria-hidden", "true");
   button.append(dot, label);
 
@@ -170,24 +169,25 @@ function updateMarkers(
       session.markers.get(vehicle.id) ?? createMarker(session, vehicle);
     session.markers.set(vehicle.id, marker);
     const selected = vehicle.id === selectedId;
-    const text = vehicle.status === "moving" ? "↑" : "•";
-    const heading = vehicle.heading - session.map.getBearing();
+    const directional = vehicle.heading !== null && (vehicle.status === "moving" || vehicle.status === "current");
+    const text = directional ? "↑" : "•";
+    marker.button.setAttribute("aria-label", mapVehicleLabel(vehicle));
+    marker.label.textContent = vehicle.status === "delayed" ? `${vehicle.plate} · GPS เก่า` : vehicle.plate;
     marker.button.setAttribute("aria-pressed", String(selected));
     marker.button.style.zIndex = selected ? "2" : "1";
     marker.label.hidden = !selected;
-    marker.dot.style.visibility = showModels ? "hidden" : "visible";
+    marker.dot.style.visibility = showModels && hasVehicleModel(vehicle) ? "hidden" : "visible";
     marker.dot.style.backgroundColor = vehicleColors[vehicle.status];
     marker.dot.style.boxShadow = selected
       ? "0 0 0 3px var(--fleet-signal), 0 3px 8px #27344950"
       : "";
     if (marker.arrow.textContent !== text) marker.arrow.textContent = text;
-    marker.arrow.style.rotate =
-      vehicle.status === "moving" ? `${heading}deg` : "";
+    marker.arrow.style.rotate = directional ? `${vehicle.heading! - session.map.getBearing()}deg` : "";
     marker.marker.setLngLat(vehicle.position);
   }
 }
 
-function updateRoute(map: MapLibreMap, vehicle: FleetVehicle | undefined) {
+function updateRoute(map: MapLibreMap, vehicle: MapVehicle | undefined) {
   const source = map.getSource<GeoJSONSource>(ROUTE_SOURCE);
   const features =
     vehicle && vehicle.route.length > 1
@@ -349,7 +349,7 @@ function syncMap(session: MapSession, props: FleetMapProps) {
     fitFleet(map, props, cameraDuration());
   } else if (
     selected &&
-    (selectionChanged || focusRequested || viewChanged || layoutChanged)
+    (selectionChanged || focusRequested || viewChanged || layoutChanged || resultsChanged)
   ) {
     const padding = cameraPadding(map, props.overlayInsets);
     map.easeTo({
@@ -524,7 +524,7 @@ export default function FleetMap(props: FleetMapProps) {
     >
       {!isReady && (
         <FleetMapSchematic
-          vehicles={props.vehicles}
+          vehicles={props.vehicles.filter(({ status }) => status !== "current" && status !== "delayed")}
           selectedId={props.selectedId}
           onSelect={props.onSelect}
           theme={props.theme}

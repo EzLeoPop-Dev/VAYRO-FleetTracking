@@ -1,8 +1,9 @@
 import type { FleetVehicle, VehicleCategory } from "./fleet-demo";
 
 export type FleetAlert = {
+  id?: string;
   vehicle: Pick<FleetVehicle, "id" | "plate">;
-  kind: "speeding" | "slow" | "offRoute" | "incident" | "offline";
+  kind: "speeding" | "slow" | "offRoute" | "incident" | "offline" | "problem";
   detail: string;
   time: number | null;
 };

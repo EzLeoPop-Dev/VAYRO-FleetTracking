@@ -2,11 +2,13 @@ import { ApiError, http, idSchema, internalGuard, ok, parseId, sum, zeroFilled }
 import { Elysia, t } from "elysia";
 import { config } from "../../config/env";
 import { prisma } from "../../lib/prisma";
+import { vehicleCounts } from "../dashboard/dashboard.repository";
 
 const STATUSES = ["active", "inactive", "maintenance"] as const;
 
 // Service-to-service API. Not reachable through the gateway; every call needs the internal token.
 export const internalRoutes = new Elysia({ prefix: "/internal" }).use(http).use(internalGuard(config.internalToken))
+  .get("/dashboard/summary", async ({ query }) => ok(await vehicleCounts(parseId(query.company_id))), { query: t.Object({ company_id: idSchema }, { additionalProperties: false }) })
   // With company_id, the vehicle must belong to that company or it is "not found" (never reveals other companies' vehicles).
   // Without it, any company's vehicle matches: only for Platform Admin callers.
   .get("/vehicles/:id", async ({ params, query }) => {

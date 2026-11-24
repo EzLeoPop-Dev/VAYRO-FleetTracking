@@ -10,9 +10,15 @@ import NavigationRouteMap from "../dashboard/_map/navigation-route-map";
 import DriverHome from "./driver-home";
 import DriverFinishSlider from "./driver-finish-slider";
 import DriverMapSheet from "./driver-map-sheet";
+import DriverMessages, { UnreadCount, useDriverMessages } from "./driver-messages";
 import { focus, Icon, JobList, muted, primaryButton, Status, surface, type DriverJobEntry } from "./driver-ui";
 
-const views = [{ id: "home", icon: "home", label: "หน้าแรก" }, { id: "jobs", icon: "box", label: "งาน" }, { id: "history", icon: "clock", label: "ประวัติ" }] as const;
+const views = [
+  { id: "home", icon: "home", label: "หน้าแรก" },
+  { id: "jobs", icon: "box", label: "งาน" },
+  { id: "messages", icon: "chat", label: "ข้อความ" },
+  { id: "history", icon: "clock", label: "ประวัติ" },
+] as const;
 type View = (typeof views)[number]["id"];
 const activeStatuses = ["accepted", "in_progress", "problem"];
 const closedStatuses = ["completed", "cancelled"];
@@ -20,6 +26,7 @@ const secondary = `min-h-11 rounded-xl border border-[var(--fleet-line)] px-3 te
 
 export default function DriverWorkspace({ user, initialNow }: { user: Pick<AuthenticatedUser, "user_id" | "full_name" | "email" | "company_id" | "company_name">; initialNow: string }) {
   const { jobs, loading, error, pending, refresh, actOnJob } = useTransportJobs();
+  const chat = useDriverMessages(user.company_id, user.user_id);
   const [view, setView] = useState<View>("home");
   const [filter, setFilter] = useState<"open" | "closed">("open");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -37,9 +44,9 @@ export default function DriverWorkspace({ user, initialNow }: { user: Pick<Authe
   const closed = entries.filter(({ status }) => closedStatuses.includes(status));
 
   useEffect(() => { const timer = window.setInterval(() => setNow(new Date().toISOString()), 60_000); return () => window.clearInterval(timer); }, []);
-  useEffect(() => { content.current?.querySelector<HTMLElement>("[data-driver-heading]")?.focus({ preventScroll: true }); }, [view, selectedId, mapMode]);
+  useEffect(() => { content.current?.querySelector<HTMLElement>("[data-driver-heading]")?.focus({ preventScroll: true }); }, [view, selectedId, mapMode, chat.selected?.vehicle.id]);
 
-  function pickView(next: View) { setView(next); setSelectedId(null); setMapMode(false); setFilter("open"); window.scrollTo(0, 0); }
+  function pickView(next: View) { chat.openThread(null); setView(next); setSelectedId(null); setMapMode(false); setFilter("open"); window.scrollTo(0, 0); }
   function openJob(entry: DriverJobEntry) { setSelectedId(entry.job.job_id); setView(closedStatuses.includes(entry.status) ? "history" : "jobs"); setMapMode(activeStatuses.includes(entry.status)); window.scrollTo(0, 0); }
   function ask(action: typeof confirmAction) { setConfirmAction(action); setProblem(""); confirmation.current?.showModal(); }
   async function act(action: JobAction) {
@@ -57,11 +64,12 @@ export default function DriverWorkspace({ user, initialNow }: { user: Pick<Authe
   </div>;
 
   return <main ref={content} className="driver-page min-h-dvh text-foreground selection:bg-[var(--fleet-selected)] selection:text-[var(--fleet-accent)]">
-    {mapMode && selected && activeStatuses.includes(selected.status) ? <JobMap key={selected.job.job_id} entry={selected} pending={pending} onBack={() => setMapMode(false)} onStart={() => ask("start")} onFinish={() => void act("complete")} onConfirmFinish={() => ask("complete")} onProblem={() => ask("problem")} notice={notice} menu={<DriverMenu view={view} onPick={pickView} />} /> : <>
+    {mapMode && selected && activeStatuses.includes(selected.status) ? <JobMap key={selected.job.job_id} entry={selected} pending={pending} onBack={() => setMapMode(false)} onStart={() => ask("start")} onFinish={() => void act("complete")} onConfirmFinish={() => ask("complete")} onProblem={() => ask("problem")} notice={notice} menu={<DriverMenu view={view} onPick={pickView} unread={chat.unread} />} /> : <>
       <header className="flex justify-center px-4 pt-5 sm:pt-7"><span role="img" aria-label="VAYRO" className="soft-card grid size-12 place-items-center bg-[var(--fleet-highlight)] text-[var(--fleet-accent)]"><Icon name="brand" className="size-7" /></span></header>
       <div className="mx-auto max-w-5xl space-y-4 px-4 pt-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 sm:pt-6">
+        {view === "messages" ? <DriverMessages chat={chat} /> : <>
         {notice}
-        {loading && !jobs.length && <p role="status" className="py-6 text-center text-sm text-[var(--fleet-muted)]">กำลังโหลดข้อมูลจาก Transport…</p>}{view === "home" && !(loading && !jobs.length) && <DriverHome user={user} now={now} active={active} today={entries.filter(({ job }) => job.scheduled_start_at && jobDateKey(job.scheduled_start_at) === jobDateKey(now))} openJob={openJob} openJobs={() => pickView("jobs")} />}
+        {loading && !jobs.length && <p role="status" className="py-6 text-center text-sm text-[var(--fleet-muted)]">กำลังโหลดข้อมูลจาก Transport…</p>}{view === "home" && !(loading && !jobs.length) && <DriverHome user={user} now={now} active={active} today={entries.filter(({ job }) => job.scheduled_start_at && jobDateKey(job.scheduled_start_at) === jobDateKey(now))} openJob={openJob} openJobs={() => pickView("jobs")} unread={chat.unread} openMessages={() => pickView("messages")} />}
         {view !== "home" && selected && <article className="space-y-4" aria-labelledby="driver-job-title">
           <section className={`${surface} p-4 sm:p-6`}><button type="button" onClick={() => setSelectedId(null)} className={`${secondary} mb-3`}>กลับไป{view === "history" ? "ประวัติ" : "งานของฉัน"}</button><div className="flex flex-wrap justify-between gap-2"><div className="min-w-0"><h1 id="driver-job-title" data-driver-heading tabIndex={-1} className="text-2xl font-bold break-words">{selected.job.job_name ?? selected.job.job_code}</h1><p className={`mt-1 font-mono text-xs ${muted}`}>{selected.job.job_code}</p></div><Status status={selected.status} /></div></section>
           <JobInformation job={selected.job} />
@@ -70,7 +78,8 @@ export default function DriverWorkspace({ user, initialNow }: { user: Pick<Authe
           </div>}
         </article>}
         {view !== "home" && !selected && <div className="space-y-4"><h1 data-driver-heading tabIndex={-1} className="text-3xl font-bold">{view === "history" ? "ประวัติการทำงาน" : "งานของฉัน"}</h1>{view === "jobs" && <div role="group" aria-label="สถานะงาน" className={`${surface} grid max-w-md grid-cols-2 gap-1.5 p-1.5`}>{([{ id: "open", label: "มอบหมายแล้ว", count: open.length }, { id: "closed", label: "จบ / ยกเลิก", count: closed.length }] as const).map((tab) => <button key={tab.id} type="button" aria-pressed={filter === tab.id} onClick={() => setFilter(tab.id)} className={`min-h-12 rounded-2xl text-sm font-bold ${focus} ${filter === tab.id ? "bg-[var(--fleet-selected)] text-[var(--fleet-accent)]" : muted}`}>{tab.label} · {tab.count}</button>)}</div>}<section className={`${surface} p-3 sm:p-4`}><JobList entries={view === "history" || filter === "closed" ? closed : open} onOpen={openJob} empty={loading ? "กำลังโหลดงาน…" : error ? "ยังโหลดงานไม่ได้ กรุณากดโหลดงานใหม่" : "ยังไม่มีงานในรายการนี้"} /></section></div>}
-      </div><DriverMenu view={view} onPick={pickView} floating />
+        </>}
+      </div><DriverMenu view={view} onPick={pickView} unread={chat.unread} floating />
     </>}
     <dialog ref={confirmation} aria-labelledby="driver-confirm-title" className="soft-window m-auto w-[calc(100%_-_2rem)] max-w-md border border-[var(--fleet-line)] bg-[var(--fleet-surface)] p-5 text-foreground backdrop:bg-neutral-900/45">
       <h2 id="driver-confirm-title" className="text-xl font-bold">{confirmAction === "complete" ? "ยืนยันจบงาน" : confirmAction === "problem" ? "แจ้งปัญหางาน" : selected?.status === "problem" ? "กลับมาทำงานต่อ" : "ตรวจรถก่อนเริ่มงาน"}</h2>
@@ -136,8 +145,23 @@ function JobMap({ entry, pending, onBack, onStart, onFinish, onConfirmFinish, on
   </article>;
 }
 
-function DriverMenu({ view, onPick, floating = false }: { view: View; onPick: (view: View) => void; floating?: boolean }) {
-  return <nav aria-label="เมนู Driver" className={floating ? "pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]" : undefined}><div className={`mx-auto grid w-full grid-cols-4 gap-1 rounded-[24px] border border-[var(--fleet-line)] bg-[var(--fleet-surface)] p-1.5 ${floating ? "soft-panel pointer-events-auto max-w-sm" : ""}`}>{views.map(({ id, icon, label }) => <button key={id} type="button" aria-current={view === id ? "page" : undefined} onClick={() => onPick(id)} className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-[17px] px-2 py-1.5 text-xs font-bold ${focus} ${view === id ? "soft-inset bg-[var(--fleet-selected)] text-[var(--fleet-accent)]" : `hover:bg-[var(--fleet-quiet)] ${muted}`}`}><Icon name={icon} className="size-5" />{label}</button>)}<form action={logout} className="min-w-0"><DriverLogoutButton /></form></div></nav>;
+function DriverMenu({ view, onPick, unread, floating = false }: { view: View; onPick: (view: View) => void; unread: number; floating?: boolean }) {
+  return (
+    <nav aria-label="เมนู Driver" className={floating ? "pointer-events-none fixed inset-x-0 bottom-0 z-30 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]" : undefined}>
+      <div className={`mx-auto grid w-full grid-cols-5 gap-1 rounded-[24px] border border-[var(--fleet-line)] bg-[var(--fleet-surface)] p-1.5 ${floating ? "soft-panel pointer-events-auto max-w-sm" : ""}`}>
+        {views.map(({ id, icon, label }) => (
+          <button key={id} type="button" aria-current={view === id ? "page" : undefined} onClick={() => onPick(id)} className={`flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-[17px] px-0.5 py-1.5 text-xs font-bold ${focus} ${view === id ? "soft-inset bg-[var(--fleet-selected)] text-[var(--fleet-accent)]" : `hover:bg-[var(--fleet-quiet)] ${muted}`}`}>
+            <span className="relative">
+              <Icon name={icon} className="size-5" />
+              {id === "messages" && unread > 0 && <span className="absolute -end-4 -top-1.5"><UnreadCount count={unread} /></span>}
+            </span>
+            {label}
+          </button>
+        ))}
+        <form action={logout} className="min-w-0"><DriverLogoutButton /></form>
+      </div>
+    </nav>
+  );
 }
 function DriverLogoutButton() {
   const { pending } = useFormStatus();

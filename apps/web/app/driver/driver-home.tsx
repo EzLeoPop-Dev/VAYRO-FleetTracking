@@ -1,10 +1,12 @@
 import type { AuthenticatedUser } from "../../../../packages/shared-types";
+import { UnreadCount } from "./driver-messages";
 import { focus, Icon, JobList, muted, primaryButton, Status, surface, type DriverJobEntry } from "./driver-ui";
 
-export default function DriverHome({ user, active, today, now, openJob, openJobs }: {
+export default function DriverHome({ user, active, today, now, openJob, openJobs, unread, openMessages }: {
   user: Pick<AuthenticatedUser, "user_id" | "full_name" | "email" | "company_id" | "company_name">;
   active?: DriverJobEntry; today: DriverJobEntry[]; now: string;
   openJob: (entry: DriverJobEntry) => void; openJobs: () => void;
+  unread: number; openMessages: () => void;
 }) {
   const waiting = today.filter(({ status }) => status === "assigned").length;
   return <div className="space-y-4 sm:space-y-5">
@@ -25,6 +27,7 @@ export default function DriverHome({ user, active, today, now, openJob, openJobs
         <section aria-labelledby="today-title" className={`${surface} p-3 sm:p-4`}><div className="mb-3 flex items-center justify-between gap-2"><h2 id="today-title" className="flex items-center gap-2 font-bold"><Icon name="calendar" />งานวันนี้</h2><span className={`text-xs ${muted}`}>{today.length} งาน</span></div><JobList entries={today} onOpen={openJob} empty="วันนี้ยังไม่มีงานที่ได้รับมอบหมาย" /></section>
       </div>
       <section aria-labelledby="notices-title" className={`${surface} min-w-0 p-4 sm:p-5`}><h2 id="notices-title" className="mb-3 flex items-center gap-2 font-bold"><Icon name="bell" />แจ้งเตือน</h2><div className="space-y-3">
+        {unread > 0 && <button type="button" onClick={openMessages} className={`flex min-h-14 w-full items-center gap-2 rounded-xl bg-[var(--fleet-selected)] p-3 text-left text-sm font-bold text-[var(--fleet-accent)] ${focus}`}><Icon name="chat" className="size-5 shrink-0" /><span className="flex-1">ข้อความใหม่จาก Dispatch</span><UnreadCount count={unread} /></button>}
         {waiting > 0 && <button type="button" onClick={openJobs} className={`min-h-14 w-full rounded-xl bg-[var(--fleet-selected)] p-3 text-left text-sm font-bold text-[var(--fleet-accent)] ${focus}`}>วันนี้มี {waiting} งานรอรับ · ดูรายการงาน</button>}
         <p className={`rounded-xl bg-[var(--fleet-quiet)] p-3 text-sm leading-relaxed ${muted}`}>ตรวจทะเบียนรถและเส้นทางให้ตรงกับใบงานก่อนยืนยันเริ่มงาน หากพบปัญหา ให้แจ้งผ่านหน้ารายละเอียดงาน</p>
         <button type="button" onClick={openJobs} className={`min-h-11 text-sm font-semibold text-[var(--fleet-accent)] ${focus}`}>ดูงานทั้งหมด</button>

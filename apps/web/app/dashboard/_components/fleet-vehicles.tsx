@@ -9,6 +9,7 @@ type FleetContext = FleetData & {
   loading: boolean;
   error: string | null;
   canManage: boolean;
+  checkedAt: string | null;
   refresh: () => void;
   saveVehicle: (input: CreateVehicleRequest | UpdateVehicleRequest, id?: string) => Promise<Result<VehicleRecord>>;
   createType: (name: string) => Promise<Result<VehicleTypeRecord>>;
@@ -56,26 +57,33 @@ export function FleetVehiclesProvider({ children, canManage }: { children: React
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
+  const [checkedAt, setCheckedAt] = useState<string | null>(null);
   const loader = useRef<AbortController | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
     loader.current = controller;
-    void Promise.all([
-      loadAll<VehicleRecord>("vehicles", controller.signal),
-      loadAll<VehicleTypeRecord>("vehicle-types", controller.signal),
-      canManage ? loadAll<User>("drivers", controller.signal) : Promise.resolve([]),
-    ]).then(([vehicles, types, users]) => {
-      if (controller.signal.aborted) return;
-      setData({ vehicles, types, drivers: users.filter((user) => user.role === "driver") });
-      setError(null);
-      setLoading(false);
-    }).catch((failure: unknown) => {
-      if (controller.signal.aborted) return;
-      setError(failure instanceof Error ? failure.message : "FLEET_UNAVAILABLE");
-      setLoading(false);
-    });
-    return () => controller.abort();
+    let fetching = false;
+    async function load() {
+      if (fetching || controller.signal.aborted) return;
+      fetching = true;
+      try {
+        const [vehicles, types, users] = await Promise.all([
+          loadAll<VehicleRecord>("vehicles", controller.signal),
+          loadAll<VehicleTypeRecord>("vehicle-types", controller.signal),
+          canManage ? loadAll<User>("drivers", controller.signal) : Promise.resolve([]),
+        ]);
+        if (controller.signal.aborted) return;
+        setData({ vehicles, types, drivers: users.filter((user) => user.role === "driver") });
+        setCheckedAt(new Date().toISOString()); setError(null);
+      } catch (failure) { if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : "FLEET_UNAVAILABLE"); }
+      finally { fetching = false; if (!controller.signal.aborted) setLoading(false); }
+    }
+    void load();
+    const visible = () => { if (document.visibilityState === "visible") void load(); };
+    const timer = window.setInterval(visible, 30_000);
+    document.addEventListener("visibilitychange", visible); window.addEventListener("online", visible);
+    return () => { controller.abort(); window.clearInterval(timer); document.removeEventListener("visibilitychange", visible); window.removeEventListener("online", visible); };
   }, [canManage, revision]);
 
   function refresh() {
@@ -92,6 +100,8 @@ export function FleetVehiclesProvider({ children, canManage }: { children: React
     });
     if (result.ok) {
       loader.current?.abort();
+      setRevision((value) => value + 1);
+      window.dispatchEvent(new Event("vayro:summary-changed"));
       setLoading(false);
       setError(null);
       setData((current) => ({ ...current, vehicles: [result.data, ...current.vehicles.filter((vehicle) => vehicle.vehicle_id !== result.data.vehicle_id)] }));
@@ -104,6 +114,8 @@ export function FleetVehiclesProvider({ children, canManage }: { children: React
     const result = await requestFleet<VehicleTypeRecord>("vehicle-types", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type_name: name }) });
     if (result.ok) {
       loader.current?.abort();
+      setRevision((value) => value + 1);
+      window.dispatchEvent(new Event("vayro:summary-changed"));
       setLoading(false);
       setError(null);
       setData((current) => ({ ...current, types: [...current.types.filter((type) => type.vehicle_type_id !== result.data.vehicle_type_id), result.data] }));
@@ -111,7 +123,7 @@ export function FleetVehiclesProvider({ children, canManage }: { children: React
     return result;
   }
 
-  return <Context.Provider value={{ ...data, loading, error, canManage, refresh, saveVehicle, createType }}>{children}</Context.Provider>;
+  return <Context.Provider value={{ ...data, loading, error, canManage, checkedAt, refresh, saveVehicle, createType }}>{children}</Context.Provider>;
 }
 
 export function useFleetVehicles() {

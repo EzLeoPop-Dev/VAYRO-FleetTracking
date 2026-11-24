@@ -6,7 +6,7 @@ Transport jobs: create, assign vehicle and driver, start, complete, report a pro
 | --- | --- |
 | Database | `transport_db` (role `transport_svc`), Prisma schema in `prisma/schema.prisma` |
 | Owns tables | `transport_jobs`, `system_log` |
-| Gateway prefix | see `gateway/src/index.ts` |
+| Gateway prefix | `/api/v1/jobs`, `/api/v1/driver` |
 
 ## Public endpoints (from the project PDF, pages 18-26)
 
@@ -58,3 +58,8 @@ When `ALERT_SERVICE_URL` is set, Transport sends assignment and problem alerts a
 
 `src/app.ts` builds the app, `src/config/env.ts` reads env, `src/plugins/guard.ts` gives `authed(...roles)` for protected routes. `src/lib/prisma.ts` is the database client.
 Keep routes thin; put rules in a service / use-case file and every database call in a repository file (see `docs/PROJECT_STRUCTURE.md`).
+
+
+## Internal dashboard counts
+
+`GET /internal/dashboard/summary?company_id=` requires an internal service token and an explicit valid company id. It returns only company-scoped aggregate counts for Reporting, without pagination or individual personal/GPS records. Database queries live in `src/modules/dashboard/dashboard.repository.ts`. Run `bun test test/dashboard.test.ts` against this service's local database to verify counts beyond 100 records, company isolation, zero counts and the internal guard. Fixtures use unique test-company ids and are retained.

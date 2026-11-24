@@ -11,6 +11,7 @@ import {
   type ReactNode,
 } from "react";
 import type { AuthenticatedUser, User } from "../../../../../packages/shared-types";
+import FleetChatProvider, { FleetChatMenuButton } from "./fleet-chat";
 
 type Theme = "light" | "dark";
 type DemoRole = "dispatch" | "admin";
@@ -33,6 +34,7 @@ const windowRoutes = new Set<string>([
   "/dashboard/manage",
 ]);
 const adminOnlyRoutes = new Set([...windowRoutes, "/dashboard/drivers"]);
+const navigationItem = "flex min-h-12 min-w-[2.05rem] flex-col items-center justify-center gap-1 rounded-full px-0.5 text-[10px] font-semibold whitespace-nowrap min-[400px]:min-w-[2.8rem] min-[400px]:px-1 min-[400px]:text-[11px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--fleet-focus)] sm:flex-row sm:gap-2 sm:px-3 sm:text-sm";
 
 const navigation = [
   {
@@ -222,6 +224,7 @@ export default function AdminShell({
           data-fleet-theme={theme}
           className="relative isolate h-dvh overflow-hidden bg-[var(--fleet-page)] font-sans text-[color:var(--fleet-text)]"
         >
+          <FleetChatProvider companyId={user.company_id}>
           {hasMap && <div className="absolute inset-0 z-0">{map}</div>}
           {restrictedInPreview ? (
               <main className="mx-auto max-w-[64rem] px-4 py-8 sm:px-8 sm:py-10">
@@ -282,7 +285,7 @@ export default function AdminShell({
                           setMinimizedPath(null);
                       }}
                       aria-current={active ? "page" : undefined}
-                      className={`flex min-h-12 min-w-[2.4rem] flex-col items-center justify-center gap-1 rounded-full px-0.5 text-[10px] font-semibold whitespace-nowrap min-[400px]:min-w-[3.1rem] min-[400px]:px-1 min-[400px]:text-[11px] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--fleet-focus)] sm:flex-row sm:gap-2 sm:px-3 sm:text-sm ${active ? "soft-inset bg-[var(--fleet-selected)] text-[color:var(--fleet-accent)]" : "text-[color:var(--fleet-muted)] hover:bg-[var(--fleet-quiet)]"}`}
+                      className={`${navigationItem} ${active ? "soft-inset bg-[var(--fleet-selected)] text-[color:var(--fleet-accent)]" : "text-[color:var(--fleet-muted)] hover:bg-[var(--fleet-quiet)]"}`}
                     >
                       <svg
                         aria-hidden="true"
@@ -302,8 +305,12 @@ export default function AdminShell({
                   </li>
                 );
               })}
+              <li>
+                <FleetChatMenuButton className={`${navigationItem} w-full cursor-pointer text-[color:var(--fleet-muted)] hover:bg-[var(--fleet-quiet)]`} />
+              </li>
             </ul>
           </nav>
+          </FleetChatProvider>
         </div>
       </DemoRoleContext.Provider>
       </AccountContext.Provider>

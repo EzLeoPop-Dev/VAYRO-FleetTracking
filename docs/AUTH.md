@@ -9,14 +9,14 @@ User endpoints run in `services/user-service` and company registration in `servi
 | --- | --- | --- |
 | `users` | `user_id`, `company_id`, `full_name`, `email`, `password_hash`, `role`, `phone`, `account_status` | Email unique across the platform; Argon2id password. `platform_admin` has NULL company; other roles require a company. |
 | `company` | `company_id`, `workspace_status` | Company accounts require an active workspace. Pending, suspended and rejected are denied. |
-| `auth_sessions` | `session_id`, `user_id`, `refresh_token_hash`, `expires_at`, `revoked_at`, `last_used_at`, `ip_address`, `user_agent`, `created_at` | Refresh secret stored as SHA-256 only; FK to users; unique hash; index `(user_id, expires_at)`. |
+| `auth_sessions` | `session_id`, `user_id`, `refresh_token_hash`, `expires_at`, `revoked_at`, `last_used_at`, `ip_address`, `user_agent`, `created_at` | Refresh secret stored as SHA-256 only. User ID references the User service. Unique hash and index on `(user_id, expires_at)`. |
 
-PostgreSQL uses identity BIGINT, TIMESTAMPTZ and CHECK constraints to represent the PDF's examples. IDs are JSON strings. The shared database now implements all 14 dictionary tables; Auth/User uses four of them. Existing databases apply migrations 002 and 003 without resetting data; see [DATABASE.md](DATABASE.md) and [the shared API contract](API_DATA_CONTRACT.md).
+PostgreSQL uses identity BIGINT, TIMESTAMPTZ and CHECK constraints to represent the PDF's examples. IDs are JSON strings. The dictionary tables live in databases owned by their services. For upgrades from the legacy shared database, see [the database migration guide](DATABASE.md) and [the API contract](API_DATA_CONTRACT.md).
 
 ## Verification
 
 ```sh
-docker compose up --build -d --wait
+docker compose -f compose.yaml -f compose.debug.yaml up --build -d --wait
 docker compose exec -T auth-service bun test test/security.test.ts
 node services/auth-service/test/e2e.mjs
 node services/user-service/test/e2e.mjs
@@ -63,14 +63,14 @@ Start PostgreSQL, Auth and Gateway through Compose (`docker compose up -d --buil
 - Driver login uses a real database account created by an authorized administrator through `POST /api/v1/users` with role `driver`. Driver jobs and job-state changes use Transport through the Gateway, with database persistence. The home page derives work notices from assigned jobs. Road routes use Navigation previews without live GPS. Test credentials are generated at provision time and are never committed.
 - Sign out from the Dashboard profile menu or More page, or the fourth item in the Driver bottom menu. The Driver menu also appears in the expanded map sheet. Its logout button is disabled while submitting. The web clears both cookies and asks Auth to revoke the session.
 - The `/register` form calls `POST /api/v1/companies/register` through the Gateway and shows a pending confirmation. It uses the first admin's name and email as the company contact. The workspace must be activated before the admin can sign in.
-- The Dashboard tracking map and overview use simulated fleet data. Vehicle management and transport jobs use real company-scoped APIs; the User API is available independently and the Add Employee invitation form is still a demo.
+- The Dashboard map layouts default to real company vehicle registrations and Transport problem reports. Vehicle details show the permanent driver and assigned job. Missing GPS is labelled unavailable and no simulated position is assigned to a real vehicle; the separate demo toggle enables the simulated fleet. The Company Admin overview counts employee accounts, vehicles and transport jobs from the owning databases through Reporting and Gateway, scoped to the authenticated company. Vehicle management and transport jobs use real company-scoped APIs; the User API is available independently and the Add Employee invitation form is still a demo.
 
 ## Not done / known limits
 
 - No rate limiting or lockout on login (spec lists 429 for API clients).
 - Approve/reject company is a separate Company module. For local tests, activate a test company with SQL. Operator-only Platform Admin setup is documented in [USER.md](USER.md).
 - Dispatcher/Driver have no admin permissions here; their domain permissions come with the vehicle/job services.
-- Gateway supplies `x-forwarded-for` for audit metadata. Local clients can also reach the localhost-only service ports, so this metadata is not an authorization source.
+- Gateway supplies `x-forwarded-for` for audit metadata. Authorization uses authenticated identity and domain permissions. The debug Compose override opens direct service ports on localhost.
 - Platform Admin pages are not built. Registered companies stay `pending` until SQL (or a future Platform Admin screen) activates them.
 - No page for the user's own profile edit (`PUT /users/me` exists in the API).
 - The e2e test needs the Docker stack and leaves its test companies/users in the database; it is not a unit test suite.

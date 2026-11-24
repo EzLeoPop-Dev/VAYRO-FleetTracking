@@ -6,7 +6,7 @@ Vehicles, vehicle types, vehicle status and the driver assigned to a vehicle.
 | --- | --- |
 | Database | `vehicle_db` (role `vehicle_svc`), Prisma schema in `prisma/schema.prisma` |
 | Owns tables | `vehicle_types`, `vehicles` |
-| Gateway prefix | see `gateway/src/index.ts` |
+| Gateway prefix | `/api/v1/vehicles`, `/api/v1/vehicle-types` |
 
 ## Public endpoints (from the project PDF, pages 18-26)
 
@@ -73,3 +73,8 @@ Keep routes thin; put rules in a service / use-case file and every database call
 ## Verification
 
 `bun test test/vehicles.test.ts` runs the API and Prisma against `DATABASE_URL` for `vehicle_db`. Auth/user/company adapters are injected test doubles. The test creates unique fixture company ids and keeps those records for inspection. It covers roles, company isolation, schemas, duplicates, partial/null updates, inactive references, filters, concurrent writes, internal API compatibility, soft deactivation and audit rollback. Configure this command against the local/test vehicle database.
+
+
+## Internal dashboard counts
+
+`GET /internal/dashboard/summary?company_id=` requires an internal service token and an explicit valid company id. It returns only company-scoped aggregate counts for Reporting, without pagination or individual personal/GPS records. Database queries live in `src/modules/dashboard/dashboard.repository.ts`. Run `bun test test/dashboard.test.ts` against this service's local database to verify counts beyond 100 records, company isolation, zero counts and the internal guard. Fixtures use unique test-company ids and are retained.

@@ -10,6 +10,13 @@ import {
   type RefObject,
 } from "react";
 import { logout } from "@/lib/auth-actions";
+import { useCompanySummary } from "@/lib/company-summary";
+import { useTransportJobs } from "@/lib/transport-client";
+import { fleetErrorMessage, useFleetVehicles, vehicleStatusLabels } from "../_components/fleet-vehicles";
+import { jobProblemAlerts, workspaceFleet } from "../_data/workspace-fleet";
+import { useFleetGps } from "../_data/fleet-gps";
+import { mapVehicleForFix } from "../_data/map-vehicle";
+import WorkspaceVehicleDetails from "./workspace-vehicle-details";
 import { accountRoleLabels, demoRoleLabels, useAdminTheme, useDashboardUser, useDemoRole } from "../_components/admin-shell";
 import { getDemoAlerts } from "../_data/fleet-alerts";
 import {
@@ -20,10 +27,11 @@ import {
 } from "../_data/fleet-demo";
 import FleetMap from "./fleet-map";
 import FleetAlertsPanel from "./fleet-alerts-panel";
+import { VehicleChatButton } from "../_components/fleet-chat";
 import { MapPanelCollapse, MapPanelHandle, type Offset, type PanelSize } from "./map-panel-drag";
 
 type MapView = "2d" | "3d";
-type FleetFilter = "all" | VehicleStatus;
+type FleetFilter = "all" | VehicleStatus | "active" | "inactive" | "maintenance";
 type MovablePanel = "summary" | "list" | "details" | "alerts";
 
 const statusMeta: Record<FleetFilter, { label: string; dot: string }> = {
@@ -31,9 +39,11 @@ const statusMeta: Record<FleetFilter, { label: string; dot: string }> = {
   moving: { label: "กำลังวิ่ง", dot: "bg-emerald-500" },
   parked: { label: "จอดอยู่", dot: "bg-amber-500" },
   offline: { label: "ขาดสัญญาณ", dot: "bg-slate-400" },
+  active: { label: "ใช้งาน", dot: "bg-emerald-500" },
+  inactive: { label: "หยุดใช้งาน", dot: "bg-slate-400" },
+  maintenance: { label: "ซ่อมบำรุง", dot: "bg-amber-400" },
 };
 
-const filters: FleetFilter[] = ["all", "moving", "parked", "offline"];
 const clock = new Intl.DateTimeFormat("th-TH", {
   timeZone: "Asia/Bangkok",
   hour: "2-digit",
@@ -406,7 +416,8 @@ const thumbnails: Record<
   },
 };
 
-function VehicleThumbnail({ category }: { category: VehicleCategory }) {
+function VehicleThumbnail({ category }: { category: VehicleCategory | null }) {
+  if (!category) return <span aria-hidden="true" className={`grid size-10 shrink-0 place-items-center rounded-lg border border-[var(--fleet-line)] bg-[var(--fleet-quiet)] ${muted}`}><Icon name="truck" size={24} /></span>;
   const { color, drawing } = thumbnails[category];
   return (
     <span
@@ -493,6 +504,7 @@ function VehicleDetails({
           <dt className={muted}>อัปเดตล่าสุด</dt>
           <dd className="text-right font-mono tabular-nums">{updateTime}</dd>
         </dl>
+        <VehicleChatButton vehicleId={vehicle.id} demo />
         <details
           key={vehicle.id}
           className="mt-3 border-t border-[var(--fleet-line)] pt-1.5"
@@ -576,6 +588,15 @@ function RoutePreview({ vehicle }: { vehicle: FleetVehicle }) {
 
 export default function FleetDashboard() {
   const { theme, toggleTheme } = useAdminTheme();
+  const account = useDashboardUser();
+  const workspace = useFleetVehicles();
+  const transport = useTransportJobs();
+  const summary = useCompanySummary();
+  const [demo, setDemo] = useState(false);
+  const filters: FleetFilter[] = demo ? ["all", "moving", "parked", "offline"] : ["all", "active", "inactive", "maintenance"];
+  const companyVehicles = useMemo(() => workspaceFleet(workspace.vehicles, workspace.types, workspace.drivers, transport.jobs), [workspace.vehicles, workspace.types, workspace.drivers, transport.jobs]);
+  const companyVehicleIds = workspace.vehicles.map(({ vehicle_id }) => vehicle_id).sort().join(",");
+  const gps = useFleetGps(account?.company_id ?? null, companyVehicleIds, !demo);
   const [view, setView] = useState<MapView>("3d");
   const [running, setRunning] = useState(true);
   const [simulation, setSimulation] = useState({ elapsed: 0, now: 0 });
@@ -604,7 +625,7 @@ export default function FleetDashboard() {
   const listOpen = listVisible && (listOverride ?? isDesktop);
 
   useEffect(() => {
-    if (!running) return;
+    if (!demo || !running) return;
     let previousTick = performance.now();
     const interval = window.setInterval(() => {
       const currentTick = performance.now();
@@ -616,14 +637,15 @@ export default function FleetDashboard() {
       }));
     }, 240);
     return () => window.clearInterval(interval);
-  }, [running]);
+  }, [demo, running]);
 
   const fleet = useMemo(
-    () => getDemoFleet(simulation.elapsed, simulation.now),
-    [simulation],
+    () => demo ? getDemoFleet(simulation.elapsed, simulation.now) : [],
+    [demo, simulation],
   );
-  const counts = { all: fleet.length, moving: 0, parked: 0, offline: 0 };
+  const counts: Record<FleetFilter, number> = { all: demo ? fleet.length : companyVehicles.length, moving: 0, parked: 0, offline: 0, active: 0, inactive: 0, maintenance: 0 };
   for (const vehicle of fleet) counts[vehicle.status] += 1;
+  for (const vehicle of companyVehicles) counts[vehicle.record.vehicle_status] += 1;
 
   const normalizedQuery = query.trim().toLocaleLowerCase("th-TH");
   const visibleVehicles = fleet.filter((vehicle) => {
@@ -642,16 +664,24 @@ export default function FleetDashboard() {
   const selectedVehicle = visibleVehicles.find(
     (vehicle) => vehicle.id === selectedId,
   );
+  const visibleCompanyVehicles = companyVehicles.filter((vehicle) => (filter === "all" || vehicle.record.vehicle_status === filter) && [vehicle.code, vehicle.plate, vehicle.typeName, vehicle.driverName].some((value) => value.toLocaleLowerCase("th-TH").includes(normalizedQuery)));
+  const selectedCompanyVehicle = demo ? undefined : visibleCompanyVehicles.find((vehicle) => vehicle.id === selectedId);
+  const mapVehicles = demo ? visibleVehicles : visibleCompanyVehicles.flatMap((vehicle) => {
+    const point = gps.points.get(vehicle.id);
+    const marker = point && mapVehicleForFix(vehicle, point, Boolean(gps.error));
+    return marker ? [marker] : [];
+  });
+  const selectedCount = demo ? visibleVehicles.length : visibleCompanyVehicles.length;
   const offlineVehicles = fleet.filter(
     (vehicle) => vehicle.status === "offline",
   );
   const showDetails =
-    detailsVisible && selectedVehicle && (isDesktop || (!listOpen && !alertsVisible));
+    detailsVisible && (selectedVehicle || selectedCompanyVehicle) && (isDesktop || (!listOpen && !alertsVisible));
   const alerts = alertsVisible
-    ? getDemoAlerts(fleet, simulation.now, simulation.now > 0 ? simulation.now - simulation.elapsed * 1000 : null)
+    ? demo ? getDemoAlerts(fleet, simulation.now, simulation.now > 0 ? simulation.now - simulation.elapsed * 1000 : null) : jobProblemAlerts(transport.jobs)
     : [];
   const overlayInsets = {
-    top: summaryVisible ? (summaryExpanded ? 165 : 78) : 32,
+    top: summaryVisible ? (summaryExpanded ? (demo ? 180 : 240) : 78) : 32,
     right: isDesktop && alertsVisible ? 368 : isDesktop && listOpen ? 330 : 56,
     bottom: isDesktop
       ? 96
@@ -703,12 +733,15 @@ export default function FleetDashboard() {
     });
   }
 
+  function reloadCompany() { workspace.refresh(); transport.refresh(); summary.refresh(); gps.refresh(); }
+  function toggleDemo() { setDemo(!demo); setSelectedId(null); setFilter("all"); setQuery(""); setRunning(true); setSimulation({ elapsed: 0, now: 0 }); }
+
   return (
     <main className="relative isolate h-full overflow-clip selection:bg-[var(--fleet-selected)] selection:text-[color:var(--fleet-text)]">
       <section aria-label="แผนที่รถ" className="absolute inset-0">
         <FleetMap
-          vehicles={visibleVehicles}
-          selectedId={selectedVehicle?.id ?? null}
+          vehicles={mapVehicles}
+          selectedId={selectedVehicle?.id ?? selectedCompanyVehicle?.id ?? null}
           onSelect={selectVehicle}
           theme={theme}
           view={view}
@@ -717,6 +750,15 @@ export default function FleetDashboard() {
           overlayInsets={overlayInsets}
         />
       </section>
+
+      {!demo && !mapVehicles.length && !selectedCompanyVehicle && (
+        <div role="status" className="pointer-events-none absolute top-1/2 left-1/2 z-10 w-[min(18rem,80vw)] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-[var(--fleet-line)] bg-[var(--fleet-surface)]/95 p-4 text-center text-sm shadow-sm">
+          <p className="font-semibold">{gps.error ?? (workspace.loading || gps.loading ? "กำลังโหลดตำแหน่ง GPS…" : "ยังไม่มีพิกัด GPS ที่แสดงได้")}</p>
+          {workspace.checkedAt && companyVehicles.length > 0 && !gps.error && !gps.loading && (
+            <p className={`mt-1 text-xs leading-relaxed ${muted}`}>{visibleCompanyVehicles.length ? "เมื่อรถส่งพิกัด ระบบจะแสดงตำแหน่งบนแผนที่" : "ลองเปลี่ยนตัวกรองรายการรถ"}</p>
+          )}
+        </div>
+      )}
 
       <div data-map-drag-bounds aria-hidden="true" className="pointer-events-none absolute inset-x-1 top-[max(0.25rem,env(safe-area-inset-top))] bottom-[calc(5.5rem+env(safe-area-inset-bottom))]" />
       <p id="map-panel-drag-help" className="sr-only">ใช้ปุ่มลูกศรเพื่อขยับแผง หรือกด Home เพื่อคืนตำแหน่งเริ่มต้น</p>
@@ -736,6 +778,8 @@ export default function FleetDashboard() {
         </div>
 
         <div id="fleet-summary-content" hidden={!summaryExpanded}>
+          {!demo && account?.role === "company_admin" && <dl aria-label="ข้อมูลบริษัทจากฐานข้อมูลจริง" className="mx-3 mb-2 grid grid-cols-3 gap-2 border-y border-[var(--fleet-line)] py-2 text-center"><div><dt className={`text-[10px] ${muted}`}>พนักงาน</dt><dd className="mt-0.5 text-sm font-bold tabular-nums">{summary.data?.employees.total ?? "—"} <span className={`text-[10px] font-normal ${muted}`}>คน</span></dd></div><div><dt className={`text-[10px] ${muted}`}>รถ</dt><dd className="mt-0.5 text-sm font-bold tabular-nums">{workspace.checkedAt ? companyVehicles.length : "—"} <span className={`text-[10px] font-normal ${muted}`}>คัน</span></dd></div><div><dt className={`text-[10px] ${muted}`}>งาน</dt><dd className="mt-0.5 text-sm font-bold tabular-nums">{summary.data?.jobs.total ?? "—"} <span className={`text-[10px] font-normal ${muted}`}>งาน</span></dd></div></dl>}
+          {!demo && (workspace.error || summary.error) && <p role="alert" className="px-3 pb-2 text-[11px] leading-relaxed text-[var(--fleet-accent)]">{workspace.error ? fleetErrorMessage(workspace.error) : "โหลดสรุปไม่สำเร็จ กรุณาโหลดใหม่"}{workspace.checkedAt ? " · รายการรถเป็นชุดล่าสุดที่โหลดสำเร็จ" : ""}</p>}
           <div
             role="group"
             aria-label="กรองตามสถานะรถ"
@@ -751,7 +795,7 @@ export default function FleetDashboard() {
               >
                 <span className="flex items-center gap-1.5 font-mono text-base font-bold leading-5 tabular-nums">
                   <StatusDot status={item} />
-                  {counts[item]}
+                  {demo || workspace.checkedAt ? counts[item] : "—"}
                 </span>
                 <span
                   className={`whitespace-nowrap text-[10px] font-medium ${muted}`}
@@ -767,20 +811,22 @@ export default function FleetDashboard() {
               className={`flex shrink-0 items-center gap-1 text-[10px] sm:text-[11px] ${muted}`}
             >
               <span className="hidden min-[360px]:block"><Icon name="map" size={13} /></span>
-              ข้อมูลจำลอง
+              {demo ? "ข้อมูลจำลอง" : "ทะเบียนรถจริง"}
             </span>
             <div className="flex shrink-0 items-center gap-1">
-              <button type="button" onClick={() => setRunning(!running)}
+              {demo && <button type="button" onClick={() => setRunning(!running)}
                 aria-label={running ? "หยุดการจำลอง" : "เล่นการจำลองต่อ"}
                 title={running ? "หยุดการจำลอง" : "เล่นการจำลองต่อ"}
                 className={`${control} h-10 w-9 px-0`}>
                 <Icon name={running ? "pause" : "play"} size={16} />
-              </button>
+              </button>}
+              {!demo && <button type="button" onClick={reloadCompany} disabled={workspace.loading || summary.loading} aria-label="โหลดข้อมูลบริษัทใหม่" title="โหลดข้อมูลบริษัทใหม่" className={`${control} h-10 w-9 px-0 disabled:opacity-50`}><Icon name="fit" size={16} /></button>}
               <button type="button" onClick={toggleTheme} aria-label="โหมดมืด" aria-pressed={theme === "dark"}
                 title={theme === "dark" ? "สลับเป็นธีมสว่าง" : "สลับเป็นธีมมืด"} className={`${control} h-10 w-9 px-0`}>
                 <Icon name={theme === "dark" ? "sun" : "moon"} size={17} />
               </button>
             </div>
+            <button type="button" onClick={toggleDemo} aria-pressed={demo} className={`min-h-9 rounded-lg px-2 text-[11px] font-semibold hover:bg-[var(--fleet-selected)] ${accent} ${focus}`}>{demo ? "กลับข้อมูลจริง" : "ดูเดโม 3D"}</button>
             <div className="flex items-center gap-1.5">
               <div
                 role="group"
@@ -804,7 +850,7 @@ export default function FleetDashboard() {
                 onClick={() => setRecenterKey((key) => key + 1)}
                 aria-label="จัดมุมมองให้เห็นรถทั้งหมด"
                 title="จัดมุมมองให้เห็นรถทั้งหมด"
-                disabled={visibleVehicles.length === 0}
+                disabled={mapVehicles.length === 0}
                 className={`${control} size-9 min-h-9 px-0 disabled:cursor-default disabled:opacity-50`}
               >
                 <Icon name="fit" size={16} />
@@ -835,7 +881,7 @@ export default function FleetDashboard() {
                 aria-live="polite"
                 className={`rounded-md bg-[var(--fleet-quiet)] px-1.5 py-1 text-xs font-medium tabular-nums ${muted}`}
               >
-                {visibleVehicles.length}/{fleet.length}
+                {demo || workspace.checkedAt ? `${selectedCount}/${counts.all}` : "—"}
               </span>
             </h2>
             {panelHandle("list", "ย้ายแผงรายการรถ", listOpen)}
@@ -865,7 +911,13 @@ export default function FleetDashboard() {
               </label>
             </div>
             <div className="min-h-0 overflow-y-auto overscroll-contain border-t border-[var(--fleet-line)] px-2 py-1.5 [scrollbar-color:var(--fleet-line)_transparent]">
-              {visibleVehicles.length ? (
+              {!demo ? <>
+                {workspace.error && <p role="alert" className="px-2 py-2 text-xs leading-relaxed text-[var(--fleet-accent)]">{fleetErrorMessage(workspace.error)}</p>}
+                {!workspace.checkedAt ? <p role="status" className={`p-4 text-center text-xs ${muted}`}>{workspace.loading ? "กำลังโหลดรถของบริษัท…" : "โหลดรายการรถไม่ได้ กรุณากดโหลดข้อมูลบริษัทใหม่"}</p> : visibleCompanyVehicles.length ? <ul className="space-y-0.5">{visibleCompanyVehicles.map((vehicle) => <li key={vehicle.id}><button type="button" aria-label={`${vehicle.plate} ${vehicle.typeName} ${vehicle.code} ${vehicleStatusLabels[vehicle.record.vehicle_status]}`} aria-pressed={selectedCompanyVehicle?.id === vehicle.id} onClick={() => selectVehicle(vehicle.id)} className={`flex min-h-14 w-full items-center gap-2 rounded-lg px-1.5 py-2 text-left ${selectedCompanyVehicle?.id === vehicle.id ? "bg-[var(--fleet-selected)]" : "hover:bg-[var(--fleet-quiet)]"} ${focus}`}><VehicleThumbnail category={vehicle.category} /><span className="min-w-0 flex-1"><span className="block truncate text-xs font-bold">{vehicle.plate}</span><span className={`mt-0.5 block truncate text-[10px] ${muted}`}>{vehicle.typeName} · {vehicle.code}</span><span className={`mt-0.5 block truncate text-[10px] ${muted}`}>{vehicle.driverName}</span></span><span className={`inline-flex shrink-0 items-center gap-1 text-[10px] ${muted}`}><StatusDot status={vehicle.record.vehicle_status} />{vehicleStatusLabels[vehicle.record.vehicle_status]}</span></button></li>)}</ul> : <div className={`p-4 text-center text-xs ${muted}`}><p>{companyVehicles.length ? "ไม่พบรถที่ตรงกับตัวกรอง" : "ยังไม่มีรถในบริษัท"}</p>{companyVehicles.length > 0 && <button type="button" onClick={() => { setQuery(""); setFilter("all"); }} className={`mt-2 min-h-10 rounded-lg px-3 underline ${focus}`}>ล้างตัวกรอง</button>}</div>}
+                <p className={`mt-2 border-t border-[var(--fleet-line)] px-2 py-3 text-[11px] leading-relaxed ${muted}`}>
+                  {gps.error ? `${gps.error}${gps.points.size ? " · แสดงพิกัดจากรอบก่อน" : ""}` : gps.loading ? "กำลังโหลดตำแหน่ง GPS…" : `แสดงพิกัด ${mapVehicles.length} จาก ${visibleCompanyVehicles.length} คัน · หมุดสีเทาคือพิกัดเก่า`}
+                </p>
+              </> : visibleVehicles.length ? (
                 <ul className="space-y-0.5">
                   {visibleVehicles.map((vehicle) => (
                     <li key={vehicle.id}>
@@ -914,7 +966,7 @@ export default function FleetDashboard() {
                   </button>
                 </div>
               )}
-              <details className="mt-1.5 border-t border-[var(--fleet-line)] px-1.5">
+              {demo && <details className="mt-1.5 border-t border-[var(--fleet-line)] px-1.5">
                 <summary
                   className={`cursor-pointer rounded-md px-1 py-2.5 text-xs font-semibold ${muted} ${focus}`}
                 >
@@ -940,13 +992,13 @@ export default function FleetDashboard() {
                     <Icon name="chevron" size={14} />
                   </button>
                 ))}
-              </details>
+              </details>}
             </div>
           </div>
         </section>
       </aside>
 
-      {showDetails && (
+      {showDetails && selectedVehicle && (
         <VehicleDetails
           vehicle={selectedVehicle}
           onClose={() => setSelectedId(null)}
@@ -956,8 +1008,9 @@ export default function FleetDashboard() {
           onToggle={() => setDetailsExpanded(!detailsExpanded)}
         />
       )}
+      {showDetails && selectedCompanyVehicle && <WorkspaceVehicleDetails vehicle={selectedCompanyVehicle} gpsPoint={gps.points.get(selectedCompanyVehicle.id)} gpsLoading={gps.loading} gpsError={gps.error} jobs={transport.jobs} jobsLoading={transport.loading} jobsError={transport.error} onClose={() => setSelectedId(null)} moveHandle={panelHandle("details", "ย้ายแผงรายละเอียดรถ", detailsExpanded)} active={activePanel === "details"} expanded={detailsExpanded} onToggle={() => setDetailsExpanded(!detailsExpanded)} thumbnail={<VehicleThumbnail category={selectedCompanyVehicle.category} />} />}
       {alertsVisible && (
-        <FleetAlertsPanel alerts={alerts} onClose={closeAlerts} onSelect={inspectAlert}
+        <FleetAlertsPanel alerts={alerts} onClose={closeAlerts} onSelect={inspectAlert} demo={demo} loading={!demo && transport.loading} error={demo ? null : transport.error}
           moveHandle={panelHandle("alerts", "ย้ายแผงแจ้งเตือน", alertsExpanded)} active={activePanel === "alerts"}
           listWidth={listOpen ? panelSizes.list?.width : undefined}
           expanded={alertsExpanded} onToggle={() => setAlertsExpanded(!alertsExpanded)}
@@ -986,7 +1039,7 @@ export default function FleetDashboard() {
             id: "details",
             label: "รายละเอียดรถ",
             visible: Boolean(showDetails),
-            disabled: !selectedVehicle,
+            disabled: !selectedVehicle && !selectedCompanyVehicle,
             toggle: () => {
               setDetailsVisible(!showDetails);
               if (!isDesktop && !showDetails) setListOverride(false);

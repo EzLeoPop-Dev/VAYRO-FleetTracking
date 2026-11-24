@@ -2,6 +2,7 @@ import { http, idSchema, internalGuard, ok, optionalWindow, parseId, sum, zeroFi
 import { Elysia, t } from "elysia";
 import { config } from "../../config/env";
 import { Prisma, prisma } from "../../lib/prisma";
+import { jobCounts } from "../dashboard/dashboard.repository";
 import { windowEnd } from "../jobs/jobs.rules";
 
 const STATUSES = ["pending", "assigned", "accepted", "in_progress", "completed", "cancelled", "problem"] as const;
@@ -11,6 +12,7 @@ const idOrNull = (v: bigint | null) => (v === null ? null : String(v));
 
 // Service-to-service API. Not reachable through the gateway; every call needs the internal token.
 export const internalRoutes = new Elysia({ prefix: "/internal" }).use(http).use(internalGuard(config.internalToken))
+  .get("/dashboard/summary", async ({ query }) => ok(await jobCounts(parseId(query.company_id))), { query: t.Object({ company_id: idSchema }, { additionalProperties: false }) })
   // Does this driver have a job in progress on this vehicle? Used to accept driver phone positions.
   .get("/jobs/in-progress", async ({ query }) => {
     const job = await prisma.transportJob.findFirst({

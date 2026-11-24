@@ -40,7 +40,7 @@ The routing profile is `auto`. Estimates use the provider's road data. A truck o
 
 ## Local development and verification
 
-From the repository root, set `AUTH_SERVICE_URL` and `INTERNAL_API_TOKEN` in the process environment, and use `PORT=3014 bun run dev:navigation`. The Gateway defaults to `http://127.0.0.1:3014` for navigation. Docker Compose provides these settings and exposes Navigation on localhost port 3014, overridable with `NAVIGATION_PORT`.
+From the repository root, set `AUTH_SERVICE_URL` and `INTERNAL_API_TOKEN` in the process environment, and use `PORT=3014 bun run dev:navigation`. The Gateway defaults to `http://127.0.0.1:3014` for navigation when run directly. Under Compose, call Navigation through the Gateway. The `compose.debug.yaml` override opens localhost port 3014, configurable with `NAVIGATION_PORT`.
 
 ```sh
 bun test services/navigation-service/test/navigation.test.ts

@@ -1,10 +1,12 @@
 import { useId } from "react";
-import type { FleetVehicle, VehicleStatus } from "../_data/fleet-demo";
+import type { MapVehicle } from "../_data/map-vehicle";
 
-export const vehicleColors: Record<VehicleStatus, string> = {
+export const vehicleColors: Record<MapVehicle["status"], string> = {
   moving: "#63bb38",
   parked: "#edac41",
   offline: "#94a3b8",
+  current: "#60a5fa",
+  delayed: "#94a3b8",
 };
 
 const schematicWidth = 900;
@@ -41,7 +43,7 @@ function project([longitude, latitude]: [number, number]) {
 }
 
 type FleetMapSchematicProps = {
-  vehicles: FleetVehicle[];
+  vehicles: MapVehicle[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   theme: "light" | "dark";
